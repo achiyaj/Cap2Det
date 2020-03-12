@@ -1,6 +1,6 @@
 train_reader {
   cap2det_reader {
-    input_pattern: "output/coco17_train.record*"
+    input_pattern: "raw-data-coco/coco17_train.record*"
     interleave_cycle_length: 1
     is_training: true
     shuffle_buffer_size: 2000
@@ -24,7 +24,7 @@ train_reader {
 }
 eval_reader {
   cap2det_reader {
-    input_pattern: "output/coco17_val.record*"
+    input_pattern: "raw-data-coco/coco17_val.record*"
     interleave_cycle_length: 1
     is_training: false
     shuffle_buffer_size: 500

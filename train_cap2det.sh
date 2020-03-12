@@ -29,7 +29,7 @@ WORKER2="${HOST0}:2228"
 WORKER3="${HOST0}:2229"
 
 # Evaluator.
-export CUDA_VISIBLE_DEVICES=4
+export CUDA_VISIBLE_DEVICES=3
 python "train/predict.py" \
   --alsologtostderr \
   --evaluator="pascal" \

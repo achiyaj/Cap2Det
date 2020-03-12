@@ -13,6 +13,7 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import tensorflow as tf
 import tarfile
 import hashlib
 import io
@@ -21,7 +22,8 @@ import nltk.tokenize
 import numpy as np
 import PIL.Image
 
-import tensorflow as tf
+import sys
+sys.path.insert(0, '/specific/netapp5_2/gamir/achiya/vqa/Cap2Det_1st_attempt/')
 
 from object_detection.utils import dataset_util
 

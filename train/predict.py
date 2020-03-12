@@ -2,22 +2,19 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-import os
-import time
-import json
-import cv2
-import numpy as np
-import collections
-import tensorflow as tf
-from google.protobuf import text_format
+import sys
+sys.path.insert(0, '/specific/netapp5_2/gamir/achiya/vqa/Cap2Det_1st_attempt/')
 
-from core.standard_fields import InputDataFields
-from core.standard_fields import DetectionResultFields
-from core.standard_fields import WSODPredictions
+# from core.standard_fields import InputDataFields
+# from core.standard_fields import DetectionResultFields
+# from core.standard_fields import WSODPredictions
+from core.standard_fields import *  # WSODPredictions, InputDataFields, DetectionResultFields
 from core.training_utils import save_model_if_it_is_better
 from core.training_utils import get_best_model_checkpoint
 from core import plotlib
 from protos import pipeline_pb2
+sys.path.insert(0, '/specific/netapp5_2/gamir/achiya/vqa/Cap2Det_1st_attempt/object_detection/')
+sys.path.insert(0, '/specific/netapp5_2/gamir/achiya/vqa/Cap2Det_1st_attempt/tensorflow_models/research/slim')
 from train import trainer
 from core.plotlib import _py_draw_rectangles
 from core import box_utils
@@ -26,6 +23,14 @@ from object_detection.utils import object_detection_evaluation
 from object_detection.metrics import coco_evaluation
 from object_detection.utils.visualization_utils import draw_bounding_box_on_image_array
 
+import os
+import time
+import json
+import cv2
+import numpy as np
+import collections
+import tensorflow as tf
+from google.protobuf import text_format
 
 from tensorflow.python.platform import tf_logging as logging
 

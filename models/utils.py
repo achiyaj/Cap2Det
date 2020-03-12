@@ -4,6 +4,10 @@ from __future__ import print_function
 
 import tensorflow as tf
 
+import sys
+sys.path.insert(0, '/specific/netapp5_2/gamir/achiya/vqa/Cap2Det_1st_attempt/')
+sys.path.insert(0, '/specific/netapp5_2/gamir/achiya/vqa/Cap2Det_1st_attempt/object_detection/')
+
 from core import utils
 from core import box_utils
 from object_detection.builders.model_builder import _build_faster_rcnn_feature_extractor as build_faster_rcnn_feature_extractor

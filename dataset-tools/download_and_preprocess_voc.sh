@@ -4,6 +4,11 @@ set -o errexit
 set -o nounset
 set -x
 
+#export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/local/lib
+#export PATH=$PATH:.
+#export PYTHONPATH=$PYTHONPATH:.
+#export SYSPATH=$SYSPATH:.
+
 download() {
   local -r dir=$1
   local -r filename=$2

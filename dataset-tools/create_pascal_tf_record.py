@@ -37,6 +37,9 @@ from lxml import etree
 import PIL.Image
 import tensorflow as tf
 
+import sys
+sys.path.insert(0, '/specific/netapp5_2/gamir/achiya/vqa/Cap2Det_1st_attempt/')
+
 from object_detection.utils import dataset_util
 from object_detection.utils import label_map_util
 
