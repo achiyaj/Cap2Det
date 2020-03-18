@@ -13,6 +13,7 @@ from __future__ import division
 from __future__ import print_function
 
 import sys
+
 sys.path.insert(0, '/specific/netapp5_2/gamir/achiya/vqa/Cap2Det_1st_attempt/')
 
 import os
@@ -28,7 +29,7 @@ flags = tf.app.flags
 flags.DEFINE_string('data_dir', '', 'Root directory to raw PASCAL VOC dataset.')
 flags.DEFINE_string('year', 'VOC2007', 'Desired challenge year.')
 flags.DEFINE_string('set', 'train', 'Convert training set, validation set or '
-                    'merged set.')
+                                    'merged set.')
 flags.DEFINE_string('annotations_dir', 'Annotations',
                     '(Relative) path to annotations directory.')
 flags.DEFINE_string('output_dir', 'raw_data/proposal_data',
@@ -50,132 +51,132 @@ ss_handler = cv2.ximgproc.segmentation.createSelectiveSearchSegmentation()
 
 
 def selective_search(data, dataset_directory, image_subdirectory='JPEGImages'):
-  """Convert XML derived dict to tf.Example proto.
+    """Convert XML derived dict to tf.Example proto.
 
-  Notice that this function normalizes the bounding box coordinates provided
-  by the raw data.
+    Notice that this function normalizes the bounding box coordinates provided
+    by the raw data.
 
-  Args:
-    data: dict holding PASCAL XML fields for a single image (obtained by
-      running dataset_util.recursive_parse_xml_to_dict)
-    dataset_directory: Path to root directory holding PASCAL dataset
-    image_subdirectory: String specifying subdirectory within the
-      PASCAL dataset directory holding the actual image data.
+    Args:
+      data: dict holding PASCAL XML fields for a single image (obtained by
+        running dataset_util.recursive_parse_xml_to_dict)
+      dataset_directory: Path to root directory holding PASCAL dataset
+      image_subdirectory: String specifying subdirectory within the
+        PASCAL dataset directory holding the actual image data.
 
-  Returns:
-    example: The converted tf.Example.
+    Returns:
+      example: The converted tf.Example.
 
-  Raises:
-    ValueError: if the image pointed to by data['filename'] is not a valid JPEG
-  """
-  img_path = os.path.join(data['folder'], image_subdirectory, data['filename'])
-  full_path = os.path.join(dataset_directory, img_path)
-  with tf.gfile.GFile(full_path, 'rb') as fid:
-    encoded_jpg = fid.read()
+    Raises:
+      ValueError: if the image pointed to by data['filename'] is not a valid JPEG
+    """
+    img_path = os.path.join(data['folder'], image_subdirectory, data['filename'])
+    full_path = os.path.join(dataset_directory, img_path)
+    with tf.gfile.GFile(full_path, 'rb') as fid:
+        encoded_jpg = fid.read()
 
-  width = int(data['size']['width'])
-  height = int(data['size']['height'])
+    width = int(data['size']['width'])
+    height = int(data['size']['height'])
 
-  # Extract proposals using the Selective Search algorithm.
+    # Extract proposals using the Selective Search algorithm.
 
-  file_bytes = np.fromstring(encoded_jpg, dtype=np.uint8)
+    file_bytes = np.fromstring(encoded_jpg, dtype=np.uint8)
 
-  bgr = cv2.imdecode(file_bytes, cv2.IMREAD_UNCHANGED)
-  height, width, _ = bgr.shape
-  assert bgr.shape[0] == height and bgr.shape[1] == width
+    bgr = cv2.imdecode(file_bytes, cv2.IMREAD_UNCHANGED)
+    height, width, _ = bgr.shape
+    assert bgr.shape[0] == height and bgr.shape[1] == width
 
-  if height / width >= 2.2:
-    width = int(height / 2.2)
-    bgr = cv2.resize(bgr, (width, height))
-  elif width / height >= 2.2:
-    height = int(width / 2.2)
-    bgr = cv2.resize(bgr, (width, height))
+    if height / width >= 2.2:
+        width = int(height / 2.2)
+        bgr = cv2.resize(bgr, (width, height))
+    elif width / height >= 2.2:
+        height = int(width / 2.2)
+        bgr = cv2.resize(bgr, (width, height))
 
-  ss_handler.setBaseImage(bgr)
-  ss_handler.switchToSelectiveSearchQuality()
-  rects = ss_handler.process()
+    ss_handler.setBaseImage(bgr)
+    ss_handler.switchToSelectiveSearchQuality()
+    rects = ss_handler.process()
 
-  rects = np.stack([rect for rect in rects if rect[2] >= 20 and rect[3] >= 20],
-                   axis=0)
+    rects = np.stack([rect for rect in rects if rect[2] >= 20 and rect[3] >= 20],
+                     axis=0)
 
-  height, width = bgr.shape[0], bgr.shape[1]
-  x, y, w, h = [rects[:, i] for i in range(4)]
-  proposals = np.stack(
-      [y / height, x / width, (y + h) / height, (x + w) / width], axis=-1)
-  return proposals
+    height, width = bgr.shape[0], bgr.shape[1]
+    x, y, w, h = [rects[:, i] for i in range(4)]
+    proposals = np.stack(
+        [y / height, x / width, (y + h) / height, (x + w) / width], axis=-1)
+    return proposals
 
 
 def main(_):
-  process_id, num_processes = 0, 1
-  if FLAGS.process_indicator:
-    process_id, num_processes = [
-        int(x) for x in FLAGS.process_indicator.split('/')
-    ]
+    process_id, num_processes = 0, 1
+    if FLAGS.process_indicator:
+        process_id, num_processes = [
+            int(x) for x in FLAGS.process_indicator.split('/')
+        ]
 
-  tf.gfile.MakeDirs(FLAGS.output_dir)
+    tf.gfile.MakeDirs(FLAGS.output_dir)
 
-  if FLAGS.set not in SETS:
-    raise ValueError('set must be in : {}'.format(SETS))
-  if FLAGS.year not in YEARS:
-    raise ValueError('year must be in : {}'.format(YEARS))
+    if FLAGS.set not in SETS:
+        raise ValueError('set must be in : {}'.format(SETS))
+    if FLAGS.year not in YEARS:
+        raise ValueError('year must be in : {}'.format(YEARS))
 
-  data_dir = FLAGS.data_dir
-  years = ['VOC2007', 'VOC2012']
-  if FLAGS.year != 'merged':
-    years = [FLAGS.year]
+    data_dir = FLAGS.data_dir
+    years = ['VOC2007', 'VOC2012']
+    if FLAGS.year != 'merged':
+        years = [FLAGS.year]
 
-  for year in years:
-    tf.logging.info('Reading from PASCAL %s dataset.', year)
-    examples_path = os.path.join(data_dir, year, 'ImageSets', 'Main',
-                                 'aeroplane_' + FLAGS.set + '.txt')
-    annotations_dir = os.path.join(data_dir, year, FLAGS.annotations_dir)
-    examples_list = dataset_util.read_examples_list(examples_path)
-    count = 0
-    for idx, example in enumerate(examples_list):
-      count += 1
+    for year in years:
+        tf.logging.info('Reading from PASCAL %s dataset.', year)
+        examples_path = os.path.join(data_dir, year, 'ImageSets', 'Main',
+                                     'aeroplane_' + FLAGS.set + '.txt')
+        annotations_dir = os.path.join(data_dir, year, FLAGS.annotations_dir)
+        examples_list = dataset_util.read_examples_list(examples_path)
+        count = 0
+        for idx, example in enumerate(examples_list):
+            count += 1
 
-      path = os.path.join(annotations_dir, example + '.xml')
+            path = os.path.join(annotations_dir, example + '.xml')
 
-      if os.path.isfile(path):
+            if os.path.isfile(path):
 
-        with tf.gfile.GFile(path, 'r') as fid:
-          xml_str = fid.read()
-        xml = etree.fromstring(xml_str)
-        data = dataset_util.recursive_parse_xml_to_dict(xml)['annotation']
+                with tf.gfile.GFile(path, 'r') as fid:
+                    xml_str = fid.read()
+                xml = etree.fromstring(xml_str)
+                data = dataset_util.recursive_parse_xml_to_dict(xml)['annotation']
 
-      else:
+            else:
 
-        # For VOC2012 test example.
+                # For VOC2012 test example.
 
-        filename = example + '.jpg'
+                filename = example + '.jpg'
 
-        data = {
-            'folder': 'VOC2012',
-            'filename': filename,
-            'source': {
-                'database': 'The VOC2008 Database',
-                'annotation': 'PASCAL VOC2008',
-                'image': 'flickr'
-            },
-            'size': {
-                'width': '99999',
-                'height': '99999',
-                'depth': '3'
-            },
-            'segmented': '0',
-            'object': []
-        }
+                data = {
+                    'folder': 'VOC2012',
+                    'filename': filename,
+                    'source': {
+                        'database': 'The VOC2008 Database',
+                        'annotation': 'PASCAL VOC2008',
+                        'image': 'flickr'
+                    },
+                    'size': {
+                        'width': '99999',
+                        'height': '99999',
+                        'depth': '3'
+                    },
+                    'segmented': '0',
+                    'object': []
+                }
 
-      if int(example) % num_processes == process_id:
-        filename = os.path.join(FLAGS.output_dir, '{}.npy'.format(example))
-        rects = selective_search(data, FLAGS.data_dir)
-        with open(filename, 'wb') as fid:
-          np.save(fid, rects)
-        tf.logging.info('On image %d of %d, %s', idx, len(examples_list),
-                        example)
+            if int(example) % num_processes == process_id:
+                filename = os.path.join(FLAGS.output_dir, '{}.npy'.format(example))
+                rects = selective_search(data, FLAGS.data_dir)
+                with open(filename, 'wb') as fid:
+                    np.save(fid, rects)
+                tf.logging.info('On image %d of %d, %s', idx, len(examples_list),
+                                example)
 
-    tf.logging.info("Total: %i", count)
+        tf.logging.info("Total: %i", count)
 
 
 if __name__ == '__main__':
-  tf.app.run()
+    tf.app.run()

@@ -39,9 +39,9 @@ from object_detection.metrics import coco_evaluation
 
 from tensorflow.python.platform import tf_logging as logging
 
-#from json import encoder
+# from json import encoder
 #
-#encoder.FLOAT_REPR = lambda o: format(o, '.3f')
+# encoder.FLOAT_REPR = lambda o: format(o, '.3f')
 
 flags = tf.app.flags
 
@@ -72,24 +72,24 @@ flags.DEFINE_integer('oicr_iterations', 3, '')
 FLAGS = flags.FLAGS
 
 try:
-  logging._get_logger().propagate = False
+    logging._get_logger().propagate = False
 except AttributeError:
-  pass
+    pass
 
 
 def _load_pipeline_proto(filename):
-  """Loads pipeline proto from file.
+    """Loads pipeline proto from file.
 
-  Args:
-    filename: path to the pipeline config file.
+    Args:
+      filename: path to the pipeline config file.
 
-  Returns:
-    an instance of pipeline_pb2.Pipeline.
-  """
-  pipeline_proto = pipeline_pb2.Pipeline()
-  with tf.gfile.GFile(filename, 'r') as fp:
-    text_format.Merge(fp.read(), pipeline_proto)
-  return pipeline_proto
+    Returns:
+      an instance of pipeline_pb2.Pipeline.
+    """
+    pipeline_proto = pipeline_pb2.Pipeline()
+    with tf.gfile.GFile(filename, 'r') as fp:
+        text_format.Merge(fp.read(), pipeline_proto)
+    return pipeline_proto
 
 
 coco_to_voc = {
@@ -117,26 +117,26 @@ coco_to_voc = {
 
 
 def _convert_coco_result_to_voc(boxes, scores, classes):
-  """Directly converts coco detection results to voc detection results.
+    """Directly converts coco detection results to voc detection results.
 
-  Args:
-    boxes: [num_boxes, 4] numpy float array.
-    scores: [num_boxes] numpy float array.
-    classes: [num_boxes] numpy string array.
+    Args:
+      boxes: [num_boxes, 4] numpy float array.
+      scores: [num_boxes] numpy float array.
+      classes: [num_boxes] numpy string array.
 
-  Returns:
-    boxes: [num_boxes, 4] numpy float array.
-    scores: [num_boxes] numpy float array.
-    classes: [num_boxes] numpy string array.
-  """
-  det_boxes, det_scores, det_classes = [], [], []
-  for box, score, cls in zip(boxes, scores, classes):
-    if int(cls) in coco_to_voc:
-      det_boxes.append(box)
-      det_scores.append(score)
-      det_classes.append(coco_to_voc[int(cls)])
-  return np.stack(det_boxes, 0), np.stack(det_scores, 0), np.stack(
-      det_classes, 0)
+    Returns:
+      boxes: [num_boxes, 4] numpy float array.
+      scores: [num_boxes] numpy float array.
+      classes: [num_boxes] numpy string array.
+    """
+    det_boxes, det_scores, det_classes = [], [], []
+    for box, score, cls in zip(boxes, scores, classes):
+        if int(cls) in coco_to_voc:
+            det_boxes.append(box)
+            det_scores.append(score)
+            det_classes.append(coco_to_voc[int(cls)])
+    return np.stack(det_boxes, 0), np.stack(det_scores, 0), np.stack(
+        det_classes, 0)
 
 
 def _run_evaluation(pipeline_proto,
@@ -145,127 +145,127 @@ def _run_evaluation(pipeline_proto,
                     category_to_id,
                     categories,
                     save_report_to_file=False):
-  """Runs the prediction.
+    """Runs the prediction.
 
-  Args:
-    pipeline_proto: An instance of pipeline_pb2.Pipeline.
-    checkpoint_path: Path to the checkpoint file.
-    oicr_iterations: A list of object_detection_evaluation.DetectionEvaluator.
-    category_to_id: A python dict maps from the category name to integer id.
-  """
-  eval_count = 0
+    Args:
+      pipeline_proto: An instance of pipeline_pb2.Pipeline.
+      checkpoint_path: Path to the checkpoint file.
+      oicr_iterations: A list of object_detection_evaluation.DetectionEvaluator.
+      category_to_id: A python dict maps from the category name to integer id.
+    """
+    eval_count = 0
 
-  for examples in trainer.predict(pipeline_proto, checkpoint_path):
-    batch_size = len(examples[InputDataFields.image_id])
+    for examples in trainer.predict(pipeline_proto, checkpoint_path):
+        batch_size = len(examples[InputDataFields.image_id])
 
-    if eval_count == 0:
-      class_labels = [
-          x.decode('utf8') for x in examples[DetectionResultFields.class_labels]
-      ]
+        if eval_count == 0:
+            class_labels = [
+                x.decode('utf8') for x in examples[DetectionResultFields.class_labels]
+            ]
 
-    for i in range(batch_size):
-      (image_id, image_height, image_width, num_groundtruths, groundtruth_boxes,
-       groundtruth_classes) = (examples[InputDataFields.image_id][i],
-                               examples[InputDataFields.image_height][i],
-                               examples[InputDataFields.image_width][i],
-                               examples[InputDataFields.num_objects][i],
-                               examples[InputDataFields.object_boxes][i],
-                               examples[InputDataFields.object_texts][i])
+        for i in range(batch_size):
+            (image_id, image_height, image_width, num_groundtruths, groundtruth_boxes,
+             groundtruth_classes) = (examples[InputDataFields.image_id][i],
+                                     examples[InputDataFields.image_height][i],
+                                     examples[InputDataFields.image_width][i],
+                                     examples[InputDataFields.num_objects][i],
+                                     examples[InputDataFields.object_boxes][i],
+                                     examples[InputDataFields.object_texts][i])
 
-      # Evaluate each OICR iterations.
+            # Evaluate each OICR iterations.
 
-      for oicr_iter in range(1 + oicr_iterations):
-        num_detections, detection_boxes, detection_scores, detection_classes = (
-            examples[DetectionResultFields.num_detections +
-                     '_at_{}'.format(oicr_iter)][i],
-            examples[DetectionResultFields.detection_boxes +
-                     '_at_{}'.format(oicr_iter)][i],
-            examples[DetectionResultFields.detection_scores +
-                     '_at_{}'.format(oicr_iter)][i],
-            examples[DetectionResultFields.detection_classes +
-                     '_at_{}'.format(oicr_iter)][i])
-        if FLAGS.eval_coco_on_voc:
-          det_boxes, det_scores, det_classes = _convert_coco_result_to_voc(
-              box_utils.py_coord_norm_to_abs(detection_boxes[:num_detections],
-                                             image_height, image_width),
-              detection_scores[:num_detections],
-              detection_classes[:num_detections])
+            for oicr_iter in range(1 + oicr_iterations):
+                num_detections, detection_boxes, detection_scores, detection_classes = (
+                    examples[DetectionResultFields.num_detections +
+                             '_at_{}'.format(oicr_iter)][i],
+                    examples[DetectionResultFields.detection_boxes +
+                             '_at_{}'.format(oicr_iter)][i],
+                    examples[DetectionResultFields.detection_scores +
+                             '_at_{}'.format(oicr_iter)][i],
+                    examples[DetectionResultFields.detection_classes +
+                             '_at_{}'.format(oicr_iter)][i])
+                if FLAGS.eval_coco_on_voc:
+                    det_boxes, det_scores, det_classes = _convert_coco_result_to_voc(
+                        box_utils.py_coord_norm_to_abs(detection_boxes[:num_detections],
+                                                       image_height, image_width),
+                        detection_scores[:num_detections],
+                        detection_classes[:num_detections])
 
-      eval_count += 1
-      if eval_count % 50 == 0:
-        tf.logging.info('On image %i.', eval_count)
+            eval_count += 1
+            if eval_count % 50 == 0:
+                tf.logging.info('On image %i.', eval_count)
 
-      # Write to detection result file.
+            # Write to detection result file.
 
-      if FLAGS.detection_results_dir:
-        results = []
-        detection_boxes = box_utils.py_coord_norm_to_abs(
-            detection_boxes[:num_detections], image_height, image_width)
+            if FLAGS.detection_results_dir:
+                results = []
+                detection_boxes = box_utils.py_coord_norm_to_abs(
+                    detection_boxes[:num_detections], image_height, image_width)
 
-        image_id = image_id.decode('utf8').split('.')[0]
-        for i in range(num_detections):
-          ymin, xmin, ymax, xmax = detection_boxes[i]
-          ymin, xmin, ymax, xmax = int(ymin), int(xmin), int(ymax), int(xmax)
-          category_id = class_labels[int(detection_classes[i] - 1)]
-          results.append({
-              'image_id': image_id,
-              'category_id': category_id,
-              'bbox': [xmin, ymin, xmax - xmin, ymax - ymin],
-              'score': round(float(detection_scores[i]), 5),
-          })
+                image_id = image_id.decode('utf8').split('.')[0]
+                for i in range(num_detections):
+                    ymin, xmin, ymax, xmax = detection_boxes[i]
+                    ymin, xmin, ymax, xmax = int(ymin), int(xmin), int(ymax), int(xmax)
+                    category_id = class_labels[int(detection_classes[i] - 1)]
+                    results.append({
+                        'image_id': image_id,
+                        'category_id': category_id,
+                        'bbox': [xmin, ymin, xmax - xmin, ymax - ymin],
+                        'score': round(float(detection_scores[i]), 5),
+                    })
 
-        filename = os.path.join(FLAGS.detection_results_dir,
-                                '{}.json'.format(image_id))
-        with open(filename, 'w') as fid:
-          fid.write(json.dumps(results, indent=2))
-        tf.logging.info('image_id=%s, file=%s', image_id, filename)
+                filename = os.path.join(FLAGS.detection_results_dir,
+                                        '{}.json'.format(image_id))
+                with open(filename, 'w') as fid:
+                    fid.write(json.dumps(results, indent=2))
+                tf.logging.info('image_id=%s, file=%s', image_id, filename)
 
 
 def main(_):
-  pipeline_proto = _load_pipeline_proto(FLAGS.pipeline_proto)
+    pipeline_proto = _load_pipeline_proto(FLAGS.pipeline_proto)
 
-  if FLAGS.model_dir:
-    pipeline_proto.model_dir = FLAGS.model_dir
-    tf.logging.info("Override model checkpoint dir: %s", FLAGS.model_dir)
+    if FLAGS.model_dir:
+        pipeline_proto.model_dir = FLAGS.model_dir
+        tf.logging.info("Override model checkpoint dir: %s", FLAGS.model_dir)
 
-  if FLAGS.shard_indicator:
-    pipeline_proto.eval_reader.shard_indicator = FLAGS.shard_indicator
-    tf.logging.info("Override shard_indicator: %s", FLAGS.shard_indicator)
+    if FLAGS.shard_indicator:
+        pipeline_proto.eval_reader.shard_indicator = FLAGS.shard_indicator
+        tf.logging.info("Override shard_indicator: %s", FLAGS.shard_indicator)
 
-  if FLAGS.input_pattern:
-    while len(pipeline_proto.eval_reader.wsod_reader.input_pattern) > 0:
-      pipeline_proto.eval_reader.wsod_reader.input_pattern.pop()
-    pipeline_proto.eval_reader.wsod_reader.input_pattern.append(FLAGS.input_pattern)
-    tf.logging.info("Override input_pattern: %s", FLAGS.input_pattern)
+    if FLAGS.input_pattern:
+        while len(pipeline_proto.eval_reader.wsod_reader.input_pattern) > 0:
+            pipeline_proto.eval_reader.wsod_reader.input_pattern.pop()
+        pipeline_proto.eval_reader.wsod_reader.input_pattern.append(FLAGS.input_pattern)
+        tf.logging.info("Override input_pattern: %s", FLAGS.input_pattern)
 
-  tf.logging.info("Pipeline configure: %s", '=' * 128)
-  tf.logging.info(pipeline_proto)
+    tf.logging.info("Pipeline configure: %s", '=' * 128)
+    tf.logging.info(pipeline_proto)
 
-  # Load the vocabulary file.
+    # Load the vocabulary file.
 
-  categories = []
-  category_to_id = {}
-  with open(FLAGS.vocabulary_file, 'r') as fp:
-    for line_id, line in enumerate(fp.readlines()):
-      categories.append({'id': 1 + line_id, 'name': line.strip('\n')})
-      category_to_id[line.strip('\n')] = 1 + line_id
-  tf.logging.info("\n%s", json.dumps(categories, indent=2))
+    categories = []
+    category_to_id = {}
+    with open(FLAGS.vocabulary_file, 'r') as fp:
+        for line_id, line in enumerate(fp.readlines()):
+            categories.append({'id': 1 + line_id, 'name': line.strip('\n')})
+            category_to_id[line.strip('\n')] = 1 + line_id
+    tf.logging.info("\n%s", json.dumps(categories, indent=2))
 
-  #checkpoint_path = get_best_model_checkpoint(FLAGS.saved_ckpts_dir)
+    # checkpoint_path = get_best_model_checkpoint(FLAGS.saved_ckpts_dir)
 
-  checkpoint_path = tf.train.latest_checkpoint(FLAGS.model_dir)
-  tf.logging.info('Start to evaluate checkpoint %s.', checkpoint_path)
+    checkpoint_path = tf.train.latest_checkpoint(FLAGS.model_dir)
+    tf.logging.info('Start to evaluate checkpoint %s.', checkpoint_path)
 
-  _run_evaluation(
-      pipeline_proto,
-      checkpoint_path,
-      FLAGS.oicr_iterations,
-      category_to_id,
-      categories,
-      save_report_to_file=True)
+    _run_evaluation(
+        pipeline_proto,
+        checkpoint_path,
+        FLAGS.oicr_iterations,
+        category_to_id,
+        categories,
+        save_report_to_file=True)
 
-  tf.logging.info('Done')
+    tf.logging.info('Done')
 
 
 if __name__ == '__main__':
-  tf.app.run()
+    tf.app.run()

@@ -11,6 +11,7 @@ from google.protobuf import text_format
 # os.environ['PATH'] = os.environ['PATH'] + ':/specific/netapp5_2/gamir/achiya/vqa/Cap2Det/'
 # os.environ['SYSPATH'] = '/specific/netapp5_2/gamir/achiya/vqa/Cap2Det/'
 import sys
+
 sys.path.insert(0, '/specific/netapp5_2/gamir/achiya/vqa/Cap2Det_1st_attempt/')
 sys.path.insert(1, '/specific/netapp5_2/gamir/achiya/vqa/Cap2Det_1st_attempt/tensorflow_models/research/slim')
 
@@ -32,34 +33,34 @@ FLAGS = flags.FLAGS
 
 
 def _load_pipeline_proto(filename):
-  """Loads pipeline proto from file.
+    """Loads pipeline proto from file.
 
-  Args:
-    filename: path to the pipeline config file.
+    Args:
+      filename: path to the pipeline config file.
 
-  Returns:
-    an instance of pipeline_pb2.Pipeline.
-  """
-  pipeline_proto = pipeline_pb2.Pipeline()
-  with tf.gfile.GFile(filename, 'r') as fp:
-    text_format.Merge(fp.read(), pipeline_proto)
-  return pipeline_proto
+    Returns:
+      an instance of pipeline_pb2.Pipeline.
+    """
+    pipeline_proto = pipeline_pb2.Pipeline()
+    with tf.gfile.GFile(filename, 'r') as fp:
+        text_format.Merge(fp.read(), pipeline_proto)
+    return pipeline_proto
 
 
 def main(_):
-  pipeline_proto = _load_pipeline_proto(FLAGS.pipeline_proto)
+    pipeline_proto = _load_pipeline_proto(FLAGS.pipeline_proto)
 
-  if FLAGS.model_dir:
-    pipeline_proto.model_dir = FLAGS.model_dir
-    tf.logging.info("Override model checkpoint dir: %s", FLAGS.model_dir)
+    if FLAGS.model_dir:
+        pipeline_proto.model_dir = FLAGS.model_dir
+        tf.logging.info("Override model checkpoint dir: %s", FLAGS.model_dir)
 
-  tf.logging.info("Pipeline configure: %s", '=' * 128)
-  tf.logging.info(pipeline_proto)
+    tf.logging.info("Pipeline configure: %s", '=' * 128)
+    tf.logging.info(pipeline_proto)
 
-  trainer.create_train_and_evaluate(pipeline_proto)
+    trainer.create_train_and_evaluate(pipeline_proto)
 
-  tf.logging.info('Done')
+    tf.logging.info('Done')
 
 
 if __name__ == '__main__':
-  tf.app.run()
+    tf.app.run()

@@ -11,51 +11,51 @@ from protos import optimizer_pb2
 
 class TrainingUtilsTest(tf.test.TestCase):
 
-  def test_build_optimizer(self):
-    # Gradient descent optimizer.
+    def test_build_optimizer(self):
+        # Gradient descent optimizer.
 
-    options_str = r"""
+        options_str = r"""
       sgd {
       }
     """
-    options = optimizer_pb2.Optimizer()
-    text_format.Merge(options_str, options)
-    opt = training_utils.build_optimizer(options)
-    self.assertIsInstance(opt, tf.train.GradientDescentOptimizer)
+        options = optimizer_pb2.Optimizer()
+        text_format.Merge(options_str, options)
+        opt = training_utils.build_optimizer(options)
+        self.assertIsInstance(opt, tf.train.GradientDescentOptimizer)
 
-    # Adagrad optimizer.
+        # Adagrad optimizer.
 
-    options_str = r"""
+        options_str = r"""
       adagrad {
       }
     """
-    options = optimizer_pb2.Optimizer()
-    text_format.Merge(options_str, options)
-    opt = training_utils.build_optimizer(options)
-    self.assertIsInstance(opt, tf.train.AdagradOptimizer)
+        options = optimizer_pb2.Optimizer()
+        text_format.Merge(options_str, options)
+        opt = training_utils.build_optimizer(options)
+        self.assertIsInstance(opt, tf.train.AdagradOptimizer)
 
-    # Adam optimizer.
+        # Adam optimizer.
 
-    options_str = r"""
+        options_str = r"""
       adam {
       }
     """
-    options = optimizer_pb2.Optimizer()
-    text_format.Merge(options_str, options)
-    opt = training_utils.build_optimizer(options)
-    self.assertIsInstance(opt, tf.train.AdamOptimizer)
+        options = optimizer_pb2.Optimizer()
+        text_format.Merge(options_str, options)
+        opt = training_utils.build_optimizer(options)
+        self.assertIsInstance(opt, tf.train.AdamOptimizer)
 
-    # Rmsprop optimizer.
+        # Rmsprop optimizer.
 
-    options_str = r"""
+        options_str = r"""
       rmsprop {
       }
     """
-    options = optimizer_pb2.Optimizer()
-    text_format.Merge(options_str, options)
-    opt = training_utils.build_optimizer(options)
-    self.assertIsInstance(opt, tf.train.RMSPropOptimizer)
+        options = optimizer_pb2.Optimizer()
+        text_format.Merge(options_str, options)
+        opt = training_utils.build_optimizer(options)
+        self.assertIsInstance(opt, tf.train.RMSPropOptimizer)
 
 
 if __name__ == '__main__':
-  tf.test.main()
+    tf.test.main()

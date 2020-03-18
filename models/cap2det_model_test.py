@@ -12,9 +12,9 @@ from models import cap2det_model
 
 class Cap2DetModelTest(tf.test.TestCase):
 
-  def test_prediction(self):
-    pass
+    def test_prediction(self):
+        pass
 
 
 if __name__ == '__main__':
-  tf.test.main()
+    tf.test.main()

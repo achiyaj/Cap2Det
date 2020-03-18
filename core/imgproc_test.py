@@ -19,203 +19,198 @@ tf.logging.set_verbosity(tf.logging.INFO)
 
 class ImgProcTest(tf.test.TestCase):
 
-  def test_gaussian_kernel(self):
+    def test_gaussian_kernel(self):
+        # 3x3 kernel.
 
-    # 3x3 kernel.
+        kernel = imgproc._py_gaussian_kernel(3)
+        self.assertNear(kernel.sum(), 1.0, err=1e-8)
+        self.assertEqual(kernel.shape, (3, 3))
+        self.assertEqual(kernel[1, 1], kernel.max())
 
-    kernel = imgproc._py_gaussian_kernel(3)
-    self.assertNear(kernel.sum(), 1.0, err=1e-8)
-    self.assertEqual(kernel.shape, (3, 3))
-    self.assertEqual(kernel[1, 1], kernel.max())
+        # 5x5 kernel.
 
-    # 5x5 kernel.
+        kernel = imgproc._py_gaussian_kernel(5)
+        self.assertNear(kernel.sum(), 1.0, err=1e-8)
+        self.assertEqual(kernel.shape, (5, 5))
+        self.assertEqual(kernel[2, 2], kernel.max())
 
-    kernel = imgproc._py_gaussian_kernel(5)
-    self.assertNear(kernel.sum(), 1.0, err=1e-8)
-    self.assertEqual(kernel.shape, (5, 5))
-    self.assertEqual(kernel[2, 2], kernel.max())
+    def test_gaussian_filter(self):
+        image = tf.placeholder(tf.float32, shape=[None, None, None, 1])
+        outputs = imgproc.gaussian_filter(image, ksize=5)
 
-  def test_gaussian_filter(self):
+        with self.test_session() as sess:
+            # Print smoothed image.
 
-    image = tf.placeholder(tf.float32, shape=[None, None, None, 1])
-    outputs = imgproc.gaussian_filter(image, ksize=5)
+            image_data = np.zeros((1, 10, 10, 1), dtype=np.float32)
+            image_data[:, 3:7, 3:7, :] = 1.0
 
-    with self.test_session() as sess:
+            image_smoothed = sess.run(
+                outputs[0, :, :, 0], feed_dict={image: image_data})
+            tf.logging.info("\n%s", image_smoothed)
 
-      # Print smoothed image.
+    def test_calc_integral_image(self):
+        tf.reset_default_graph()
 
-      image_data = np.zeros((1, 10, 10, 1), dtype=np.float32)
-      image_data[:, 3:7, 3:7, :] = 1.0
+        data = tf.placeholder(tf.float32, shape=[None, None, None])
+        cumsum = imgproc.calc_integral_image(tf.expand_dims(data, axis=0))[0]
 
-      image_smoothed = sess.run(
-          outputs[0, :, :, 0], feed_dict={image: image_data})
-      tf.logging.info("\n%s", image_smoothed)
+        with self.test_session() as sess:
+            # 2x3 image, 1 channel.
 
-  def test_calc_integral_image(self):
-    tf.reset_default_graph()
+            cumsum_value = sess.run(
+                cumsum, feed_dict={data: [[[1], [2], [3]], [[4], [5], [6]]]})
+            self.assertAllClose(
+                cumsum_value,
+                [[[0], [0], [0], [0]], [[0], [1], [3], [6]], [[0], [5], [12], [21]]])
 
-    data = tf.placeholder(tf.float32, shape=[None, None, None])
-    cumsum = imgproc.calc_integral_image(tf.expand_dims(data, axis=0))[0]
+            # 3x3 image, 1 channel.
 
-    with self.test_session() as sess:
+            cumsum_value = sess.run(
+                cumsum,
+                feed_dict={data: [[[1], [2], [3]], [[4], [5], [6]], [[7], [8], [9]]]})
+            self.assertAllClose(cumsum_value,
+                                [[[0], [0], [0], [0]], [[0], [1], [3], [6]],
+                                 [[0], [5], [12], [21]], [[0], [12], [27], [45]]])
 
-      # 2x3 image, 1 channel.
+            # 3x3 image, 2 channels.
 
-      cumsum_value = sess.run(
-          cumsum, feed_dict={data: [[[1], [2], [3]], [[4], [5], [6]]]})
-      self.assertAllClose(
-          cumsum_value,
-          [[[0], [0], [0], [0]], [[0], [1], [3], [6]], [[0], [5], [12], [21]]])
+            cumsum_value = sess.run(
+                cumsum,
+                feed_dict={
+                    data: [[[1, 0], [2, 2], [3, 3]], [[4, 4], [5, 5], [6, 6]],
+                           [[7, 7], [8, 8], [9, 9]]]
+                })
+            self.assertAllClose(
+                cumsum_value,
+                [[[0, 0], [0, 0], [0, 0], [0, 0]], [[0, 0], [1, 0], [3, 2], [6, 5]],
+                 [[0, 0], [5, 4], [12, 11], [21, 20]],
+                 [[0, 0], [12, 11], [27, 26], [45, 44]]])
 
-      # 3x3 image, 1 channel.
+    def test_calc_cumsum_2d(self):
+        tf.reset_default_graph()
 
-      cumsum_value = sess.run(
-          cumsum,
-          feed_dict={data: [[[1], [2], [3]], [[4], [5], [6]], [[7], [8], [9]]]})
-      self.assertAllClose(cumsum_value,
-                          [[[0], [0], [0], [0]], [[0], [1], [3], [6]],
-                           [[0], [5], [12], [21]], [[0], [12], [27], [45]]])
+        image = tf.placeholder(tf.float32, shape=[None, None, None])
+        box = tf.placeholder(tf.int64, shape=[None, 4])
+        cumsum = imgproc.calc_cumsum_2d(
+            tf.expand_dims(image, axis=0), tf.expand_dims(box, axis=0))[0]
 
-      # 3x3 image, 2 channels.
+        with self.test_session() as sess:
+            # 3x3 image, 1 channel.
 
-      cumsum_value = sess.run(
-          cumsum,
-          feed_dict={
-              data: [[[1, 0], [2, 2], [3, 3]], [[4, 4], [5, 5], [6, 6]],
-                     [[7, 7], [8, 8], [9, 9]]]
-          })
-      self.assertAllClose(
-          cumsum_value,
-          [[[0, 0], [0, 0], [0, 0], [0, 0]], [[0, 0], [1, 0], [3, 2], [6, 5]],
-           [[0, 0], [5, 4], [12, 11], [21, 20]],
-           [[0, 0], [12, 11], [27, 26], [45, 44]]])
+            result = sess.run(
+                cumsum,
+                feed_dict={
+                    image: [[[1], [2], [3]], [[4], [5], [6]], [[7], [8], [9]]],
+                    box: [
+                        [0, 0, 1, 1],
+                        [2, 2, 3, 3],
+                        [1, 1, 2, 2],
+                        [0, 0, 2, 2],
+                        [1, 1, 3, 3],
+                        [0, 0, 3, 3],
+                        [0, 0, 2, 3],
+                    ]
+                })
+            self.assertAllClose(result, [[1], [9], [5], [12], [28], [45], [21]])
 
-  def test_calc_cumsum_2d(self):
-    tf.reset_default_graph()
+            # 3x3 image, 2 channels.
 
-    image = tf.placeholder(tf.float32, shape=[None, None, None])
-    box = tf.placeholder(tf.int64, shape=[None, 4])
-    cumsum = imgproc.calc_cumsum_2d(
-        tf.expand_dims(image, axis=0), tf.expand_dims(box, axis=0))[0]
+            result = sess.run(
+                cumsum,
+                feed_dict={
+                    image: [[[1, 1], [2, 2], [3, 3]], [[4, 1], [5, 2], [6, 3]],
+                            [[7, 1], [8, 2], [9, 3]]],
+                    box: [
+                        [0, 0, 1, 1],
+                        [2, 2, 3, 3],
+                        [1, 1, 2, 2],
+                        [0, 0, 2, 2],
+                        [1, 1, 3, 3],
+                        [0, 0, 3, 3],
+                        [0, 0, 2, 3],
+                    ]
+                })
+            self.assertAllClose(
+                result,
+                [[1, 1], [9, 3], [5, 2], [12, 6], [28, 10], [45, 18], [21, 12]])
 
-    with self.test_session() as sess:
+    def test_resize_image_to_size(self):
+        tf.reset_default_graph()
 
-      # 3x3 image, 1 channel.
+        image = tf.placeholder(tf.float32, shape=[None, None, None])
+        new_height = tf.placeholder(tf.int32, shape=[])
+        new_width = tf.placeholder(tf.int32, shape=[])
+        resized_image = imgproc.resize_image_to_size(
+            image, new_height=new_height, new_width=new_width)
 
-      result = sess.run(
-          cumsum,
-          feed_dict={
-              image: [[[1], [2], [3]], [[4], [5], [6]], [[7], [8], [9]]],
-              box: [
-                  [0, 0, 1, 1],
-                  [2, 2, 3, 3],
-                  [1, 1, 2, 2],
-                  [0, 0, 2, 2],
-                  [1, 1, 3, 3],
-                  [0, 0, 3, 3],
-                  [0, 0, 2, 3],
-              ]
-          })
-      self.assertAllClose(result, [[1], [9], [5], [12], [28], [45], [21]])
+        with self.test_session() as sess:
+            img, img_shape = sess.run(
+                resized_image,
+                feed_dict={
+                    image: np.zeros([300, 400, 3]),
+                    new_height: 600,
+                    new_width: 800,
+                })
+            self.assertEqual(img.shape, (600, 800, 3))
+            self.assertAllEqual(img_shape, [600, 800, 3])
 
-      # 3x3 image, 2 channels.
+    def test_resize_image_to_max_dimension(self):
+        tf.reset_default_graph()
 
-      result = sess.run(
-          cumsum,
-          feed_dict={
-              image: [[[1, 1], [2, 2], [3, 3]], [[4, 1], [5, 2], [6, 3]],
-                      [[7, 1], [8, 2], [9, 3]]],
-              box: [
-                  [0, 0, 1, 1],
-                  [2, 2, 3, 3],
-                  [1, 1, 2, 2],
-                  [0, 0, 2, 2],
-                  [1, 1, 3, 3],
-                  [0, 0, 3, 3],
-                  [0, 0, 2, 3],
-              ]
-          })
-      self.assertAllClose(
-          result,
-          [[1, 1], [9, 3], [5, 2], [12, 6], [28, 10], [45, 18], [21, 12]])
+        image = tf.placeholder(tf.float32, shape=[None, None, 3])
 
-  def test_resize_image_to_size(self):
-    tf.reset_default_graph()
+        # pad_to_max_dimension = False.
 
-    image = tf.placeholder(tf.float32, shape=[None, None, None])
-    new_height = tf.placeholder(tf.int32, shape=[])
-    new_width = tf.placeholder(tf.int32, shape=[])
-    resized_image = imgproc.resize_image_to_size(
-        image, new_height=new_height, new_width=new_width)
+        resized_image = imgproc.resize_image_to_max_dimension(
+            image, max_dimension=800, pad_to_max_dimension=False)
+        with self.test_session() as sess:
+            img, img_shape = sess.run(
+                resized_image, feed_dict={
+                    image: np.zeros([300, 400, 3]),
+                })
+            self.assertEqual(img.shape, (600, 800, 3))
+            self.assertAllEqual(img_shape, [600, 800, 3])
 
-    with self.test_session() as sess:
-      img, img_shape = sess.run(
-          resized_image,
-          feed_dict={
-              image: np.zeros([300, 400, 3]),
-              new_height: 600,
-              new_width: 800,
-          })
-      self.assertEqual(img.shape, (600, 800, 3))
-      self.assertAllEqual(img_shape, [600, 800, 3])
+            img, img_shape = sess.run(
+                resized_image, feed_dict={
+                    image: np.zeros([400, 300, 3]),
+                })
+            self.assertEqual(img.shape, (800, 600, 3))
+            self.assertAllEqual(img_shape, [800, 600, 3])
 
-  def test_resize_image_to_max_dimension(self):
-    tf.reset_default_graph()
+        # pad_to_max_dimension = True.
 
-    image = tf.placeholder(tf.float32, shape=[None, None, 3])
+        resized_image = imgproc.resize_image_to_max_dimension(
+            image, max_dimension=800, pad_to_max_dimension=True)
+        with self.test_session() as sess:
+            img, img_shape = sess.run(
+                resized_image, feed_dict={
+                    image: np.zeros([300, 400, 3]),
+                })
+            self.assertEqual(img.shape, (800, 800, 3))
+            self.assertAllEqual(img_shape, [600, 800, 3])
 
-    # pad_to_max_dimension = False.
+    def test_resize_image_to_min_dimension(self):
+        tf.reset_default_graph()
 
-    resized_image = imgproc.resize_image_to_max_dimension(
-        image, max_dimension=800, pad_to_max_dimension=False)
-    with self.test_session() as sess:
-      img, img_shape = sess.run(
-          resized_image, feed_dict={
-              image: np.zeros([300, 400, 3]),
-          })
-      self.assertEqual(img.shape, (600, 800, 3))
-      self.assertAllEqual(img_shape, [600, 800, 3])
+        image = tf.placeholder(tf.float32, shape=[None, None, 3])
 
-      img, img_shape = sess.run(
-          resized_image, feed_dict={
-              image: np.zeros([400, 300, 3]),
-          })
-      self.assertEqual(img.shape, (800, 600, 3))
-      self.assertAllEqual(img_shape, [800, 600, 3])
+        resized_image = imgproc.resize_image_to_min_dimension(
+            image, min_dimension=900)
+        with self.test_session() as sess:
+            img, img_shape = sess.run(
+                resized_image, feed_dict={
+                    image: np.zeros([300, 400, 3]),
+                })
+            self.assertEqual(img.shape, (900, 1200, 3))
+            self.assertAllEqual(img_shape, [900, 1200, 3])
 
-    # pad_to_max_dimension = True.
-
-    resized_image = imgproc.resize_image_to_max_dimension(
-        image, max_dimension=800, pad_to_max_dimension=True)
-    with self.test_session() as sess:
-      img, img_shape = sess.run(
-          resized_image, feed_dict={
-              image: np.zeros([300, 400, 3]),
-          })
-      self.assertEqual(img.shape, (800, 800, 3))
-      self.assertAllEqual(img_shape, [600, 800, 3])
-
-  def test_resize_image_to_min_dimension(self):
-    tf.reset_default_graph()
-
-    image = tf.placeholder(tf.float32, shape=[None, None, 3])
-
-    resized_image = imgproc.resize_image_to_min_dimension(
-        image, min_dimension=900)
-    with self.test_session() as sess:
-      img, img_shape = sess.run(
-          resized_image, feed_dict={
-              image: np.zeros([300, 400, 3]),
-          })
-      self.assertEqual(img.shape, (900, 1200, 3))
-      self.assertAllEqual(img_shape, [900, 1200, 3])
-
-      img, img_shape = sess.run(
-          resized_image, feed_dict={
-              image: np.zeros([400, 300, 3]),
-          })
-      self.assertEqual(img.shape, (1200, 900, 3))
-      self.assertAllEqual(img_shape, [1200, 900, 3])
+            img, img_shape = sess.run(
+                resized_image, feed_dict={
+                    image: np.zeros([400, 300, 3]),
+                })
+            self.assertEqual(img.shape, (1200, 900, 3))
+            self.assertAllEqual(img_shape, [1200, 900, 3])
 
 
 #  def test_calc_box_saliency(self):
@@ -338,4 +333,4 @@ class ImgProcTest(tf.test.TestCase):
 #    tf.logging.info("The image with edge boxes is written to %s.", filename)
 
 if __name__ == '__main__':
-  tf.test.main()
+    tf.test.main()

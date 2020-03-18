@@ -3,6 +3,7 @@ from __future__ import division
 from __future__ import print_function
 
 import sys
+
 sys.path.insert(0, '/specific/netapp5_2/gamir/achiya/vqa/Cap2Det_1st_attempt/')
 sys.path.insert(0, '/specific/netapp5_2/gamir/achiya/vqa/Cap2Det_1st_attempt/object_detection/')
 
@@ -15,27 +16,27 @@ import models.text_model
 
 
 def build(options, is_training=False):
-  """Builds a Model based on the options.
+    """Builds a Model based on the options.
 
-  Args:
-    options: a model_pb2.Model instance.
-    is_training: True if this model is being built for training.
+    Args:
+      options: a model_pb2.Model instance.
+      is_training: True if this model is being built for training.
 
-  Returns:
-    a Model instance.
+    Returns:
+      a Model instance.
 
-  Raises:
-    ValueError: if options is invalid.
-  """
-  if not isinstance(options, model_pb2.Model):
-    raise ValueError('The options has to be an instance of model_pb2.Model.')
+    Raises:
+      ValueError: if options is invalid.
+    """
+    if not isinstance(options, model_pb2.Model):
+        raise ValueError('The options has to be an instance of model_pb2.Model.')
 
-  lookup_table = get_registered_model_classes()
+    lookup_table = get_registered_model_classes()
 
-  for extension, value in options.ListFields():
-    if extension in lookup_table:
-      return lookup_table[extension](value, is_training)
+    for extension, value in options.ListFields():
+        if extension in lookup_table:
+            return lookup_table[extension](value, is_training)
 
-  raise ValueError(
-      'Unknown model {}, did you forget to call register_model_class?'.format(
-          extension.full_name))
+    raise ValueError(
+        'Unknown model {}, did you forget to call register_model_class?'.format(
+            extension.full_name))
