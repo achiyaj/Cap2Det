@@ -20,7 +20,7 @@ from core import box_utils
 from core import builder as function_builder
 
 from models.registry import register_model_class
-from models.label_extractor import build_label_extractor
+from models.label_extractor import *
 
 slim = tf.contrib.slim
 
@@ -48,6 +48,11 @@ class Model(ModelBase):
             options.oicr_post_processor)
 
         self._label_extractor = build_label_extractor(options.label_extractor)
+
+        # add attributes data
+        self.att_categories = {}
+        if type(self._label_extractor) == SGExtendMatchExtractor:
+            self.att_categories = json.load(open(options.label_extractor.sg_extend_match_extractor.atts_file))
 
     def _build_midn_network(self, num_proposals, proposal_features, num_classes):
         """Builds the Multiple Instance Detection Network.
@@ -99,10 +104,10 @@ class Model(ModelBase):
             proposal_scores = tf.multiply(
                 tf.nn.sigmoid(class_logits), proba_r_given_c)
 
-            # tf.summary.histogram('midn/logits_r_given_c', logits_r_given_c)
-            # tf.summary.histogram('midn/logits_c_given_r', logits_c_given_r)
-            # tf.summary.histogram('midn/proposal_scores', proposal_scores)
-            # tf.summary.histogram('midn/class_logits', class_logits)
+            tf.summary.histogram('midn/logits_r_given_c', logits_r_given_c)
+            tf.summary.histogram('midn/logits_c_given_r', logits_c_given_r)
+            tf.summary.histogram('midn/proposal_scores', proposal_scores)
+            tf.summary.histogram('midn/class_logits', class_logits)
 
         return tf.squeeze(class_logits, axis=1), proposal_scores, proba_r_given_c
 
@@ -183,6 +188,20 @@ class Model(ModelBase):
                 proposal_features,
                 num_classes=self._label_extractor.num_classes)
 
+            for category_name, category_atts in self.att_categories.items():
+                with tf.variable_scope(category_name):
+                    (category_midn_class_logits, category_midn_proposal_scores, category_midn_proba_r_given_c) = \
+                        self._build_midn_network(
+                            num_proposals,
+                            proposal_features,
+                            num_classes=len(category_atts))
+
+                    predictions[f'{category_name}_{Cap2DetPredictions.midn_class_logits}'] = category_midn_class_logits
+                    predictions[f'{category_name}_{Cap2DetPredictions.oicr_proposal_scores}_at_0'] = \
+                        category_midn_proposal_scores
+                    predictions[f'{category_name}_{Cap2DetPredictions.midn_proba_r_given_c}'] = \
+                        category_midn_proba_r_given_c
+
         # Build the OICR network.
         #   proposal_scores shape = [batch, max_num_proposals, 1 + num_classes].
         #   See `Multiple Instance Detection Network with OICR`.
@@ -195,6 +214,15 @@ class Model(ModelBase):
                     num_outputs=1 + self._label_extractor.num_classes,
                     activation_fn=None,
                     scope='oicr/iter{}'.format(i + 1))
+
+                for category_name, category_atts in self.att_categories.items():
+                    with tf.variable_scope(category_name):
+                        predictions[f'{category_name}_{Cap2DetPredictions.oicr_proposal_scores}_at_{i + 1}'] = \
+                            slim.fully_connected(
+                            proposal_features,
+                            num_outputs=len(category_atts),
+                            activation_fn=None,
+                            scope='oicr/iter{}'.format(i + 1))
 
         # Set the predictions.
 
@@ -289,12 +317,30 @@ class Model(ModelBase):
 
             # Loss of the MIDN module.
 
-            labels = self._label_extractor.extract_labels(examples)
-            losses = tf.nn.sigmoid_cross_entropy_with_logits(
-                labels=labels,
-                logits=predictions[Cap2DetPredictions.midn_class_logits])
-            loss_dict['midn_cross_entropy_loss'] = tf.multiply(
-                tf.reduce_mean(losses), options.midn_loss_weight)
+            if len(self.att_categories) > 0:
+                obj_labels, att_labels = self._label_extractor.extract_labels(examples)
+                obj_losses = tf.nn.sigmoid_cross_entropy_with_logits(
+                    labels=obj_labels,
+                    logits=predictions[Cap2DetPredictions.midn_class_logits])
+
+                loss_dict['midn_cross_entropy_loss'] = tf.multiply(tf.reduce_mean(obj_losses), options.midn_loss_weight)
+
+                for category_name in self.att_categories.keys():
+                    cur_category_loss = tf.nn.sigmoid_cross_entropy_with_logits(
+                        labels=att_labels[category_name],
+                        logits=predictions[f'{category_name}_{Cap2DetPredictions.midn_class_logits}'])
+
+                    loss_dict['midn_cross_entropy_loss'] += \
+                        tf.reduce_mean(cur_category_loss) * options.midn_loss_weight * options.atts_loss_weight
+
+            else:
+                obj_labels = self._label_extractor.extract_labels(examples)
+                obj_losses = tf.nn.sigmoid_cross_entropy_with_logits(
+                    labels=obj_labels,
+                    logits=predictions[Cap2DetPredictions.midn_class_logits])
+
+                loss_dict['midn_cross_entropy_loss'] = tf.multiply(
+                    tf.reduce_mean(obj_losses), options.midn_loss_weight)
 
             # Losses of the OICR module.
 
@@ -311,11 +357,24 @@ class Model(ModelBase):
                 [tf.fill([batch, max_num_proposals, 1], 0.0), proposal_scores_0],
                 axis=-1)
 
+            atts_proposal_scores_0_dict = {}
+            for category_name in self.att_categories.keys():
+                category_proposal_scores_0 = predictions[
+                    f'{category_name}_{Cap2DetPredictions.oicr_proposal_scores}_at_0']
+                if options.oicr_use_proba_r_given_c:
+                    category_proposal_scores_0 = predictions[
+                        f'{category_name}_{Cap2DetPredictions.midn_proba_r_given_c}']
+                # category_proposal_scores_0 = tf.concat(
+                #     [tf.fill([batch, max_num_proposals, 1], 0.0), category_proposal_scores_0],
+                #     axis=-1)
+
+                atts_proposal_scores_0_dict[category_name] = category_proposal_scores_0
+
             for i in range(options.oicr_iterations):
                 proposal_scores_1 = predictions[Cap2DetPredictions.oicr_proposal_scores
                                                 + '_at_{}'.format(i + 1)]
                 oicr_cross_entropy_loss_at_i = model_utils.calc_oicr_loss(
-                    labels,
+                    obj_labels,
                     num_proposals,
                     proposals,
                     tf.stop_gradient(proposal_scores_0),
@@ -326,6 +385,22 @@ class Model(ModelBase):
                     oicr_cross_entropy_loss_at_i, options.oicr_loss_weight)
 
                 proposal_scores_0 = tf.nn.softmax(proposal_scores_1, axis=-1)
+
+                for category_name in self.att_categories.keys():
+                    category_proposal_scores_1 = predictions[
+                        f'{category_name}_{Cap2DetPredictions.oicr_proposal_scores}_at_{i + 1}']
+                    category_oicr_cross_entropy_loss_at_i = model_utils.calc_oicr_loss(
+                        att_labels[category_name],
+                        num_proposals,
+                        proposals,
+                        tf.stop_gradient(atts_proposal_scores_0_dict[category_name]),
+                        category_proposal_scores_1,
+                        scope=f'{category_name}_oicr_{i+1}',
+                        iou_threshold=options.oicr_iou_threshold)
+                    loss_dict[f'{category_name}_oicr_cross_entropy_loss_at_{i + 1}'] = \
+                        category_oicr_cross_entropy_loss_at_i * options.oicr_loss_weight * options.atts_loss_weight
+
+                    atts_proposal_scores_0_dict[category_name] = tf.nn.softmax(category_proposal_scores_1, axis=-1)
 
         return loss_dict
 
