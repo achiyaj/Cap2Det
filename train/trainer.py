@@ -223,12 +223,16 @@ def create_train_and_evaluate(pipeline_proto):
 
     # Create estimator.
 
+    # distribution = tf.contrib.distribute.ParameterServerStrategy()
+
     run_config = tf.estimator.RunConfig(
         save_summary_steps=train_config.save_summary_steps,
         save_checkpoints_steps=train_config.save_checkpoints_steps,
         session_config=session_config,
         keep_checkpoint_max=train_config.keep_checkpoint_max,
-        log_step_count_steps=train_config.log_step_count_steps)
+        log_step_count_steps=train_config.log_step_count_steps,
+        # train_distribute=distribution
+    )
 
     model_fn = _create_model_fn(pipeline_proto, is_chief=run_config.is_chief)
 

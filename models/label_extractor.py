@@ -508,6 +508,9 @@ class SGExtendMatchExtractor(LabelExtractor):
 
         self.att_categories = json.load(open(options.atts_file))
         self.att2category = {att: cat_name for cat_name, cat_dict in self.att_categories.items() for att in cat_dict.keys()}
+        self.att_to_ids = {att: (cat_id, att_id)
+                           for cat_id, (cat_name, cat_dict) in enumerate(self.att_categories.items())
+                           for att_id, att in enumerate(cat_dict.keys())}
 
     def extract_labels(self, examples):
         """Extracts the pseudo labels.
@@ -556,23 +559,48 @@ class SGExtendMatchExtractor(LabelExtractor):
                     true_fn=lambda: tf.reduce_max(cur_labels, axis=1),
                     false_fn=lambda: tf.zeros(shape=[batch, len(category_keys)]))
 
+            PADDED_SIZE = 100
+
             def get_sg(imgs_ids):
-                import pdb; pdb.set_trace()
+                str_imgs_ids = [str(x.decode('utf-8')) for x in imgs_ids.numpy().tolist()]
+                label_imgs_ids = []
+                sg_obj_labels = []
+                sg_att_categories = []
+                sg_att_labels = []
+                num_labels = 0
+                for img_num, img_id in enumerate(str_imgs_ids):
+                    sgs = [self.sgs_dict[x] for x in self.sgs_dict.keys() if x.startswith(f'{img_id}_')]
 
-                str_imgs_ids = [str(x) for x in imgs_ids.numpy().tolist()]
-                for img_id in str_imgs_ids:
-                    sgs = [self.sgs_dict[x] for x in self.sgs_dict.keys() if x.startswith(img_id)]
-                    cur_labels = []
                     for sg in sgs:
-                        for obj_labels in sg['objects']:
-                            if len(obj_labels['attributes']) == 0:
-                                cur_labels.append(obj_labels['label'])
-                            else:
-                                cur_labels += [(obj_labels['label'], x) for x in obj_labels['attributes']]
+                        for obj_data in sg['objects'].values():
+                            if not obj_data['label'] in self._name2id.keys():
+                                continue
+                            relevant_atts = [x for x in obj_data['attributes'] if x in self.att2category.keys()]
+                            for cur_att in relevant_atts:
+                                label_imgs_ids.append(img_num)
+                                sg_obj_labels.append(self._name2id[obj_data['label']])
 
-                return 1
+                                cat_id, att_id = self.att_to_ids[cur_att]
+                                sg_att_categories.append(cat_id)
+                                sg_att_labels.append(att_id)
+                                num_labels += 1
 
-            return obj_labels, att_labels
+                num_padding = PADDED_SIZE - len(label_imgs_ids)
+                label_imgs_ids = label_imgs_ids + [-1] * num_padding
+                sg_obj_labels = sg_obj_labels + [-1] * num_padding
+                sg_att_categories = sg_att_categories + [-1] * num_padding
+                sg_att_labels = sg_att_labels + [-1] * num_padding
+                num_labels = max(1, num_labels)
+                return label_imgs_ids, sg_obj_labels, sg_att_categories, sg_att_labels, num_labels
+
+            sg_data = tf.py_function(func=get_sg, inp=[examples[InputDataFields.image_id]],
+                                     Tout=[tf.int32] * 5)
+            sg_data[0] = tf.reshape(sg_data[0], [100])
+            sg_data[1] = tf.reshape(sg_data[1], [100])
+            sg_data[2] = tf.reshape(sg_data[2], [100])
+            sg_data[3] = tf.reshape(sg_data[3], [100])
+
+            return obj_labels, att_labels, sg_data
 
 
 

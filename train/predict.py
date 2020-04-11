@@ -350,7 +350,6 @@ def _run_evaluation(pipeline_proto,
     visl_examples = []
 
     for examples in trainer.predict(pipeline_proto, checkpoint_path):
-        print('I AM HERE!!!!!!')
         batch_size = len(examples[InputDataFields.image_id])
         summary_bytes = examples['summary']
 

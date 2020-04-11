@@ -4,6 +4,7 @@ from __future__ import print_function
 
 import tensorflow as tf
 import numpy as np
+import math
 
 from models.model_base import ModelBase
 from protos import cap2det_model_pb2
@@ -53,6 +54,7 @@ class Model(ModelBase):
         self.att_categories = {}
         if type(self._label_extractor) == SGExtendMatchExtractor:
             self.att_categories = json.load(open(options.label_extractor.sg_extend_match_extractor.atts_file))
+            self.id2category = {i: list(self.att_categories.keys())[i] for i in range(len(self.att_categories))}
 
     def _build_midn_network(self, num_proposals, proposal_features, num_classes):
         """Builds the Multiple Instance Detection Network.
@@ -299,6 +301,60 @@ class Model(ModelBase):
 
         return predictions_aggregated
 
+    def build_sg_loss(self, predictions, examples, sg_data):
+        label_imgs_ids, sg_obj_labels, sg_att_categories, sg_att_labels, num_labels = sg_data
+        atts_midn_scores = \
+            [predictions[f'{self.id2category[i]}_midn_class_logits'] for i in range(len(self.id2category))]
+        obj_midn_scores = predictions['midn_class_logits']
+
+        all_atts_midn_scores = tf.concat(atts_midn_scores, axis=1)
+
+        PADDED_SIZE = 100
+
+        def cat_and_att_to_id(cat_id, att_id):
+            atts_count = 0
+            for cat_id in range(cat_id - 1):
+                cat_name = self.id2category[cat_id]
+                atts_count += len(self.att_categories[cat_name])
+
+            return atts_count + att_id
+
+        def body(obj_id, all_prob_products):
+            cur_img_id = tf.gather(label_imgs_ids, obj_id)
+
+            def get_output_prob():
+                cur_obj_label = tf.gather(sg_obj_labels, obj_id)
+                cur_att_cat = tf.gather(sg_att_categories, obj_id)
+                cur_att_label = tf.gather(sg_att_labels, obj_id)
+                obj_score_idx = tf.stack([cur_img_id, cur_obj_label])
+                obj_score_idx = tf.reshape(obj_score_idx, [1, -1])
+
+                cur_obj_score = tf.gather_nd(obj_midn_scores, obj_score_idx)
+                cur_att_row = tf.py_function(func=cat_and_att_to_id, inp=[cur_att_cat, cur_att_label], Tout=tf.int32)
+                att_score_idx = tf.stack([cur_img_id, cur_att_row])
+                att_score_idx = tf.reshape(att_score_idx, [1, -1])
+                cur_att_score = tf.gather_nd(all_atts_midn_scores, att_score_idx)
+
+                return tf.sigmoid(cur_obj_score) * tf.sigmoid(cur_att_score)
+
+            output_prob = tf.cond(tf.equal(cur_img_id, tf.constant(-1)), lambda: 1.0, lambda: get_output_prob())
+            output_prob = tf.reshape(output_prob, [-1])
+            all_prob_products = all_prob_products.write(obj_id, output_prob)
+
+            return obj_id + 1, all_prob_products
+
+        def condition(obj_id, all_prob_products):
+            return obj_id < PADDED_SIZE
+
+        obj_id = 0
+        all_prob_products = tf.TensorArray(dtype=tf.float32, size=PADDED_SIZE)
+        obj_id, all_prob_products = tf.while_loop(condition, body, [obj_id, all_prob_products])
+        all_prob_products = tf.reshape(all_prob_products.stack(), [-1])
+        loss = - tf.reduce_sum(tf.log(all_prob_products + tf.ones(tf.shape(all_prob_products)) * 1e-8)) / tf.cast(num_labels, tf.float32)
+
+        return loss
+
+
     def build_loss(self, predictions, examples, **kwargs):
         """Build tf graph to compute loss.
 
@@ -318,7 +374,7 @@ class Model(ModelBase):
             # Loss of the MIDN module.
 
             if len(self.att_categories) > 0:
-                obj_labels, att_labels = self._label_extractor.extract_labels(examples)
+                obj_labels, att_labels, sg_data = self._label_extractor.extract_labels(examples)
                 obj_losses = tf.nn.sigmoid_cross_entropy_with_logits(
                     labels=obj_labels,
                     logits=predictions[Cap2DetPredictions.midn_class_logits])
@@ -332,6 +388,8 @@ class Model(ModelBase):
 
                     loss_dict['midn_cross_entropy_loss'] += \
                         tf.reduce_mean(cur_category_loss) * options.midn_loss_weight * options.atts_loss_weight
+
+                loss_dict['sg_loss'] = self.build_sg_loss(predictions, examples, sg_data)
 
             else:
                 obj_labels = self._label_extractor.extract_labels(examples)
