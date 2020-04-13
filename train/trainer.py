@@ -204,10 +204,9 @@ def create_train_and_evaluate(pipeline_proto):
     eval_config = pipeline_proto.eval_config
     eval_input_fn = reader.get_input_fn(pipeline_proto.eval_reader)
 
-    # eval_hooks = [
-    #     EvalSummarySaverHook(output_dir=pipeline_proto.model_dir + '/eval')
-    # ]
-    eval_hooks = None
+    eval_hooks = [
+        EvalSummarySaverHook(output_dir=pipeline_proto.model_dir + '/eval')
+    ]
     eval_spec = tf.estimator.EvalSpec(
         input_fn=eval_input_fn,
         steps=eval_config.steps,

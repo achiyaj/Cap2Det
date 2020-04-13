@@ -381,13 +381,13 @@ class Model(ModelBase):
 
                 loss_dict['midn_cross_entropy_loss'] = tf.multiply(tf.reduce_mean(obj_losses), options.midn_loss_weight)
 
-                for category_name in self.att_categories.keys():
-                    cur_category_loss = tf.nn.sigmoid_cross_entropy_with_logits(
-                        labels=att_labels[category_name],
-                        logits=predictions[f'{category_name}_{Cap2DetPredictions.midn_class_logits}'])
-
-                    loss_dict['midn_cross_entropy_loss'] += \
-                        tf.reduce_mean(cur_category_loss) * options.midn_loss_weight * options.atts_loss_weight
+                # for category_name in self.att_categories.keys():
+                #     cur_category_loss = tf.nn.sigmoid_cross_entropy_with_logits(
+                #         labels=att_labels[category_name],
+                #         logits=predictions[f'{category_name}_{Cap2DetPredictions.midn_class_logits}'])
+                #
+                #     loss_dict['midn_cross_entropy_loss'] += \
+                #         tf.reduce_mean(cur_category_loss) * options.midn_loss_weight * options.atts_loss_weight
 
                 loss_dict['sg_loss'] = self.build_sg_loss(predictions, examples, sg_data)
 
@@ -455,8 +455,8 @@ class Model(ModelBase):
                         category_proposal_scores_1,
                         scope=f'{category_name}_oicr_{i+1}',
                         iou_threshold=options.oicr_iou_threshold)
-                    loss_dict[f'{category_name}_oicr_cross_entropy_loss_at_{i + 1}'] = \
-                        category_oicr_cross_entropy_loss_at_i * options.oicr_loss_weight * options.atts_loss_weight
+                    # loss_dict[f'{category_name}_oicr_cross_entropy_loss_at_{i + 1}'] = \
+                    #     category_oicr_cross_entropy_loss_at_i * options.oicr_loss_weight * options.atts_loss_weight
 
                     atts_proposal_scores_0_dict[category_name] = tf.nn.softmax(category_proposal_scores_1, axis=-1)
 
