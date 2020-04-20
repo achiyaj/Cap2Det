@@ -176,12 +176,13 @@ def calc_sg_oicr_loss(labels,
             att_category_scores_1 = tf.squeeze(tf.slice(all_att_dists_1, cur_category_slice_begin, cur_category_slice_size))
             att_category_scores_1 = tf.ensure_shape(att_category_scores_1, (max_num_proposals, None))
 
-            cur_img_obj_labels = tf.gather(scores_0, cur_img_id, axis=0)
-            cur_obj_scores = tf.squeeze(tf.gather(cur_img_obj_labels, cur_obj_label, axis=1))
-            cur_att_scores = tf.squeeze(tf.gather(att_category_scores_0, cur_att_label, axis=1))
+            cur_img_obj_scores_0 = tf.gather(scores_0, cur_img_id, axis=0)
+            cur_img_obj_scores_1 = tf.gather(scores_1, cur_img_id, axis=0)
+            cur_obj_probs_0 = tf.squeeze(tf.gather(cur_img_obj_scores_0, cur_obj_label, axis=1))
+            cur_att_probs_0 = tf.squeeze(tf.gather(att_category_scores_0, cur_att_label, axis=1))
             cur_img_proposals = tf.gather(proposals, cur_img_id, axis=0)
 
-            product_scores = tf.multiply(cur_obj_scores, cur_att_scores)
+            product_scores = tf.multiply(cur_obj_probs_0, cur_att_probs_0)
             confident_proposal_idx = tf.cast(tf.argmax(product_scores), tf.int32)
             confident_proposal = tf.gather(cur_img_proposals, confident_proposal_idx, axis=0)
             confident_proposal_tiled = tf.tile(tf.expand_dims(confident_proposal, axis=0), [max_num_proposals, 1])
@@ -192,20 +193,20 @@ def calc_sg_oicr_loss(labels,
             # Filter out irrelevant predictions using image-level label.
 
             relevant_boxes = tf.boolean_mask(tf.range(max_num_proposals), tf.greater_equal(iou, iou_threshold))
-            relevant_obj_scores = tf.gather(cur_img_obj_labels, relevant_boxes, axis=0)
-            relevant_att_scores = tf.gather(att_category_scores_1, relevant_boxes, axis=0)
+            relevant_obj_scores_1 = tf.gather(cur_img_obj_scores_1, relevant_boxes, axis=0)
+            relevant_att_scores_1 = tf.gather(att_category_scores_1, relevant_boxes, axis=0)
 
             obj_labels = tf.fill(tf.shape(relevant_boxes), cur_obj_label)
             att_labels = tf.fill(tf.shape(relevant_boxes), cur_att_label)
 
             objs_ce_loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(
                 labels=tf.stop_gradient(tf.one_hot(obj_labels, depth=num_classes_plus_one, axis=-1)),
-                logits=relevant_obj_scores,
+                logits=relevant_obj_scores_1,
                 dim=-1))
 
             atts_ce_loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(
-                labels=tf.stop_gradient(tf.one_hot(att_labels, depth=tf.shape(relevant_att_scores)[1], axis=-1)),
-                logits=relevant_att_scores,
+                labels=tf.stop_gradient(tf.one_hot(att_labels, depth=tf.shape(relevant_att_scores_1)[1], axis=-1)),
+                logits=relevant_att_scores_1,
                 dim=-1))
 
             sg_oicr_cross_entropy_loss += objs_ce_loss + atts_ce_loss
