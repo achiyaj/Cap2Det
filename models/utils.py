@@ -161,7 +161,7 @@ def calc_sg_oicr_loss(labels,
         (batch, max_num_proposals,
          num_classes_plus_one) = utils.get_tensor_shape(scores_0)
 
-        def body(cur_label_idx, sg_oicr_cross_entropy_loss):
+        def body(cur_label_idx, sg_oicr_cross_entropy_loss, total_num_boxes):
             cur_img_id = tf.gather(label_imgs_ids, cur_label_idx)
             cur_obj_label = tf.gather(sg_obj_labels, cur_label_idx)
             cur_att_cat = tf.gather(sg_att_categories, cur_label_idx)
@@ -199,26 +199,28 @@ def calc_sg_oicr_loss(labels,
             obj_labels = tf.fill(tf.shape(relevant_boxes), cur_obj_label)
             att_labels = tf.fill(tf.shape(relevant_boxes), cur_att_label)
 
-            objs_ce_loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(
+            objs_ce_loss = tf.reduce_sum(tf.nn.softmax_cross_entropy_with_logits(
                 labels=tf.stop_gradient(tf.one_hot(obj_labels, depth=num_classes_plus_one, axis=-1)),
                 logits=relevant_obj_scores_1,
                 dim=-1))
 
-            atts_ce_loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(
+            atts_ce_loss = tf.reduce_sum(tf.nn.softmax_cross_entropy_with_logits(
                 labels=tf.stop_gradient(tf.one_hot(att_labels, depth=tf.shape(relevant_att_scores_1)[1], axis=-1)),
                 logits=relevant_att_scores_1,
                 dim=-1))
 
             sg_oicr_cross_entropy_loss += objs_ce_loss + atts_ce_loss
+            total_num_boxes += tf.shape(relevant_boxes)[0]
 
-            return cur_label_idx + 1, sg_oicr_cross_entropy_loss
+            return cur_label_idx + 1, sg_oicr_cross_entropy_loss, total_num_boxes
 
-        def cond(cur_label_idx, sg_oicr_cross_entropy_loss):
+        def cond(cur_label_idx, sg_oicr_cross_entropy_loss, total_num_boxes):
             return cur_label_idx < num_labels
 
         def get_loss_cond():
-            _, sg_oicr_cross_entropy_loss = tf.while_loop(cond, body, [tf.constant(0), tf.constant(0.0)])
-            return sg_oicr_cross_entropy_loss
+            _, sg_oicr_cross_entropy_loss, total_num_boxes = \
+                tf.while_loop(cond, body, [tf.constant(0), tf.constant(0.0), tf.constant(0)])
+            return sg_oicr_cross_entropy_loss / tf.cast(total_num_boxes, tf.float32)
 
     sg_oicr_cross_entropy_loss = tf.cond(tf.equal(num_labels, tf.constant(0)), lambda: 0.0, lambda: get_loss_cond())
     return sg_oicr_cross_entropy_loss
