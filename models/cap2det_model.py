@@ -221,10 +221,10 @@ class Model(ModelBase):
                     with tf.variable_scope(category_name):
                         predictions[f'{category_name}_{Cap2DetPredictions.oicr_proposal_scores}_at_{i + 1}'] = \
                             slim.fully_connected(
-                            proposal_features,
-                            num_outputs=len(category_atts),
-                            activation_fn=None,
-                            scope='oicr/iter{}'.format(i + 1))
+                                proposal_features,
+                                num_outputs=len(category_atts),
+                                activation_fn=None,
+                                scope='oicr/iter{}'.format(i + 1))
 
         # Set the predictions.
 
@@ -301,7 +301,7 @@ class Model(ModelBase):
 
         return predictions_aggregated
 
-    def build_sg_loss(self, predictions, examples, sg_data):
+    def build_midn_sg_loss(self, predictions, examples, sg_data):
         label_imgs_ids, sg_obj_labels, sg_att_categories, sg_att_labels, num_labels = sg_data
         atts_midn_scores = \
             [predictions[f'{self.id2category[i]}_midn_class_logits'] for i in range(len(self.id2category))]
@@ -309,7 +309,7 @@ class Model(ModelBase):
 
         all_atts_midn_scores = tf.concat(atts_midn_scores, axis=1)
 
-        PADDED_SIZE = 100
+        num_sg_labels = tf.shape(sg_obj_labels)[0]
 
         def cat_and_att_to_id(cat_id, att_id):
             atts_count = 0
@@ -344,16 +344,18 @@ class Model(ModelBase):
             return obj_id + 1, all_prob_products
 
         def condition(obj_id, all_prob_products):
-            return obj_id < PADDED_SIZE
+            return obj_id < num_sg_labels
 
-        obj_id = 0
-        all_prob_products = tf.TensorArray(dtype=tf.float32, size=PADDED_SIZE)
-        obj_id, all_prob_products = tf.while_loop(condition, body, [obj_id, all_prob_products])
-        all_prob_products = tf.reshape(all_prob_products.stack(), [-1])
-        loss = - tf.reduce_sum(tf.log(all_prob_products + tf.ones(tf.shape(all_prob_products)) * 1e-8)) / tf.cast(num_labels, tf.float32)
+        def get_sg_loss():
+            obj_id = 0
+            all_prob_products = tf.TensorArray(dtype=tf.float32, size=num_sg_labels)
+            obj_id, all_prob_products = tf.while_loop(condition, body, [obj_id, all_prob_products])
+            all_prob_products = tf.reshape(all_prob_products.stack(), [-1])
+            loss = - tf.reduce_sum(tf.log(all_prob_products + tf.ones(tf.shape(all_prob_products)) * 1e-8)) / tf.cast(
+                num_labels, tf.float32)
+            return loss
 
-        return loss
-
+        return tf.cond(tf.equal(num_sg_labels, tf.constant(0)), lambda: 0.0, lambda: get_sg_loss())
 
     def build_loss(self, predictions, examples, **kwargs):
         """Build tf graph to compute loss.
@@ -381,15 +383,7 @@ class Model(ModelBase):
 
                 loss_dict['midn_cross_entropy_loss'] = tf.multiply(tf.reduce_mean(obj_losses), options.midn_loss_weight)
 
-                # for category_name in self.att_categories.keys():
-                #     cur_category_loss = tf.nn.sigmoid_cross_entropy_with_logits(
-                #         labels=att_labels[category_name],
-                #         logits=predictions[f'{category_name}_{Cap2DetPredictions.midn_class_logits}'])
-                #
-                #     loss_dict['midn_cross_entropy_loss'] += \
-                #         tf.reduce_mean(cur_category_loss) * options.midn_loss_weight * options.atts_loss_weight
-
-                loss_dict['sg_loss'] = self.build_sg_loss(predictions, examples, sg_data)
+                loss_dict['midn_sg_loss'] = self.build_midn_sg_loss(predictions, examples, sg_data)
 
             else:
                 obj_labels = self._label_extractor.extract_labels(examples)
@@ -447,18 +441,39 @@ class Model(ModelBase):
                 for category_name in self.att_categories.keys():
                     category_proposal_scores_1 = predictions[
                         f'{category_name}_{Cap2DetPredictions.oicr_proposal_scores}_at_{i + 1}']
-                    category_oicr_cross_entropy_loss_at_i = model_utils.calc_oicr_loss(
-                        att_labels[category_name],
-                        num_proposals,
-                        proposals,
-                        tf.stop_gradient(atts_proposal_scores_0_dict[category_name]),
-                        category_proposal_scores_1,
-                        scope=f'{category_name}_oicr_{i+1}',
-                        iou_threshold=options.oicr_iou_threshold)
+                    # category_oicr_cross_entropy_loss_at_i = model_utils.calc_oicr_loss(
+                    #     att_labels[category_name],
+                    #     num_proposals,
+                    #     proposals,
+                    #     tf.stop_gradient(atts_proposal_scores_0_dict[category_name]),
+                    #     category_proposal_scores_1,
+                    #     scope=f'{category_name}_oicr_{i+1}',
+                    #     iou_threshold=options.oicr_iou_threshold)
                     # loss_dict[f'{category_name}_oicr_cross_entropy_loss_at_{i + 1}'] = \
                     #     category_oicr_cross_entropy_loss_at_i * options.oicr_loss_weight * options.atts_loss_weight
 
                     atts_proposal_scores_0_dict[category_name] = tf.nn.softmax(category_proposal_scores_1, axis=-1)
+
+                atts_proposal_scores_1_dict = {
+                    key: predictions[f'{key}_{Cap2DetPredictions.oicr_proposal_scores}_at_{i + 1}']
+                    for key in self.att_categories.keys()
+                }
+                loss_dict[f'sg_oicr_cross_entropy_loss_at_{i + 1}'] = model_utils.calc_sg_oicr_loss(
+                    obj_labels,
+                    num_proposals,
+                    proposals,
+                    tf.stop_gradient(proposal_scores_0),
+                    proposal_scores_1,
+                    atts_proposal_scores_0_dict,
+                    atts_proposal_scores_1_dict,
+                    sg_data,
+                    self.id2category,
+                    [len(x) for x in self.att_categories.values()],
+                    scope='oicr_{}'.format(i + 1),
+                    iou_threshold=options.oicr_iou_threshold)
+
+                atts_proposal_scores_0_dict = {key: tf.nn.softmax(atts_proposal_scores_1_dict[key], axis=-1) for key in
+                                               self.att_categories.keys()}
 
         return loss_dict
 

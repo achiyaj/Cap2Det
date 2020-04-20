@@ -3,6 +3,7 @@ from __future__ import division
 from __future__ import print_function
 
 import tensorflow as tf
+import numpy as np
 
 import sys
 
@@ -60,7 +61,7 @@ def calc_oicr_loss(labels,
         for indices_1, label_per_class in zip(
                 tf.unstack(proposal_ind, axis=-1), tf.unstack(labels, axis=-1)):
             # Gather the most confident proposal for the class.
-            #   confident_proosal shape = [batch, 4].
+            #   confident_proposal shape = [batch, 4].
 
             indices = tf.stack([indices_0, indices_1], axis=-1)
             confident_proposal = tf.gather_nd(proposals, indices)
@@ -109,6 +110,119 @@ def calc_oicr_loss(labels,
     return oicr_cross_entropy_loss
 
 
+def calc_sg_oicr_loss(labels,
+                      num_proposals,
+                      proposals,
+                      scores_0,
+                      scores_1,
+                      att_scores_dict_0,
+                      att_scores_dict_1,
+                      sg_data,
+                      id2category_dict,
+                      num_atts_per_category,
+                      scope,
+                      iou_threshold=0.5):
+    """Calculates the NOD loss at refinement stage `i`.
+
+    Args:
+      labels: A [batch, num_classes] float tensor.
+      num_proposals: A [batch] int tensor.
+      proposals: A [batch, max_num_proposals, 4] float tensor.
+      scores_0: A [batch, max_num_proposal, 1 + num_classes] float tensor,
+        representing the proposal score at `k-th` refinement.
+      scores_1: A [batch, max_num_proposal, 1 + num_classes] float tensor,
+        representing the proposal score at `(k+1)-th` refinement.
+      att_scores_dict_0: A [batch, max_num_proposal, 1 + num_classes] float tensor,
+        representing the proposal score at `k-th` refinement.
+      att_scores_dict_1: A [batch, max_num_proposal, 1 + num_classes] float tensor,
+        representing the proposal score at `(k+1)-th` refinement.
+      sg_data: A list of int32 tensors with length 5. The tensors in the list are unpacked to:
+        label_imgs_ids: at the 'i-th' location, which image from within the batch are the labels corresponding to.
+        sg_obj_labels: the 'i-th' object label.
+        sg_att_categories: at the 'i-th' location, the category of the attribute label.
+        sg_att_labels: at the 'i-th' location, the attribute label within the 'i-th' category.
+        num_labels: the total number of labels in the sg data.
+
+    Returns:
+      oicr_cross_entropy_loss: a scalar float tensor.
+    """
+    label_imgs_ids, sg_obj_labels, sg_att_categories, sg_att_labels, num_labels = sg_data
+
+    all_att_dists_0 = tf.concat(list(att_scores_dict_0.values()), axis=2)
+    all_att_dists_1 = tf.concat(list(att_scores_dict_1.values()), axis=2)
+
+    def get_category_relevant_slice(cat_idx, img_idx):
+        int_cat_idx = cat_idx.numpy().item()
+        begin_idx = sum(num_atts_per_category[:int_cat_idx])
+        return np.array([img_idx, 0, begin_idx], dtype=np.int32), \
+               np.array([1, -1, num_atts_per_category[int_cat_idx]], dtype=np.int32)
+
+    with tf.name_scope(scope):
+        (batch, max_num_proposals,
+         num_classes_plus_one) = utils.get_tensor_shape(scores_0)
+
+        def body(cur_label_idx, sg_oicr_cross_entropy_loss):
+            cur_img_id = tf.gather(label_imgs_ids, cur_label_idx)
+            cur_obj_label = tf.gather(sg_obj_labels, cur_label_idx)
+            cur_att_cat = tf.gather(sg_att_categories, cur_label_idx)
+            cur_att_label = tf.gather(sg_att_labels, cur_label_idx)
+
+            cur_category_slice_begin, cur_category_slice_size = tf.py_function(func=get_category_relevant_slice,
+                                                                               inp=[cur_att_cat, cur_img_id],
+                                                                               Tout=[tf.int32] * 2)
+
+            att_category_scores_0 = tf.squeeze(tf.slice(all_att_dists_0, cur_category_slice_begin, cur_category_slice_size))
+            att_category_scores_0 = tf.ensure_shape(att_category_scores_0, (max_num_proposals, None))
+            att_category_scores_1 = tf.squeeze(tf.slice(all_att_dists_1, cur_category_slice_begin, cur_category_slice_size))
+            att_category_scores_1 = tf.ensure_shape(att_category_scores_1, (max_num_proposals, None))
+
+            cur_img_obj_labels = tf.gather(scores_0, cur_img_id, axis=0)
+            cur_obj_scores = tf.squeeze(tf.gather(cur_img_obj_labels, cur_obj_label, axis=1))
+            cur_att_scores = tf.squeeze(tf.gather(att_category_scores_0, cur_att_label, axis=1))
+            cur_img_proposals = tf.gather(proposals, cur_img_id, axis=0)
+
+            product_scores = tf.multiply(cur_obj_scores, cur_att_scores)
+            confident_proposal_idx = tf.cast(tf.argmax(product_scores), tf.int32)
+            confident_proposal = tf.gather(cur_img_proposals, confident_proposal_idx, axis=0)
+            confident_proposal_tiled = tf.tile(tf.expand_dims(confident_proposal, axis=0), [max_num_proposals, 1])
+
+            iou = box_utils.iou(tf.reshape(cur_img_proposals, [-1, 4]), confident_proposal_tiled)
+            iou = tf.reshape(iou, [max_num_proposals])
+
+            # Filter out irrelevant predictions using image-level label.
+
+            relevant_boxes = tf.boolean_mask(tf.range(max_num_proposals), tf.greater_equal(iou, iou_threshold))
+            relevant_obj_scores = tf.gather(cur_img_obj_labels, relevant_boxes, axis=0)
+            relevant_att_scores = tf.gather(att_category_scores_1, relevant_boxes, axis=0)
+
+            obj_labels = tf.fill(tf.shape(relevant_boxes), cur_obj_label)
+            att_labels = tf.fill(tf.shape(relevant_boxes), cur_att_label)
+
+            objs_ce_loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(
+                labels=tf.stop_gradient(tf.one_hot(obj_labels, depth=num_classes_plus_one, axis=-1)),
+                logits=relevant_obj_scores,
+                dim=-1))
+
+            atts_ce_loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(
+                labels=tf.stop_gradient(tf.one_hot(att_labels, depth=tf.shape(relevant_att_scores)[1], axis=-1)),
+                logits=relevant_att_scores,
+                dim=-1))
+
+            sg_oicr_cross_entropy_loss += objs_ce_loss + atts_ce_loss
+
+            return cur_label_idx + 1, sg_oicr_cross_entropy_loss
+
+        def cond(cur_label_idx, sg_oicr_cross_entropy_loss):
+            return cur_label_idx < num_labels
+
+        def get_loss_cond():
+            _, sg_oicr_cross_entropy_loss = tf.while_loop(cond, body, [tf.constant(0), tf.constant(0.0)])
+            return sg_oicr_cross_entropy_loss
+
+    sg_oicr_cross_entropy_loss = tf.cond(tf.equal(num_labels, tf.constant(0)), lambda: 0.0, lambda: get_loss_cond())
+    return sg_oicr_cross_entropy_loss
+
+
 def extract_frcnn_feature(inputs,
                           num_proposals,
                           proposals,
@@ -138,8 +252,6 @@ def extract_frcnn_feature(inputs,
 
     (features_to_crop, _) = feature_extractor.extract_proposal_features(
         preprocessed_inputs, scope='first_stage_feature_extraction')
-
-    # features_to_crop = tf.Print(features_to_crop, [features_to_crop[0, 0, 0, 0]], 'featuremap value at 0, 0, 0, 0 is: ')
 
     if options.dropout_on_feature_map:
         features_to_crop = slim.dropout(

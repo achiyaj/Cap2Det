@@ -541,7 +541,6 @@ class SGExtendMatchExtractor(LabelExtractor):
                 true_fn=lambda: tf.reduce_max(obj_labels, axis=1)[:, :-1],
                 false_fn=lambda: tf.zeros(shape=[batch, self.num_classes]))
 
-
             att_labels = {}
             for category_name, category_atts in self.att_categories.items():
                 category_keys = list(category_atts.keys())
@@ -558,8 +557,6 @@ class SGExtendMatchExtractor(LabelExtractor):
                     num_tokens > 0,
                     true_fn=lambda: tf.reduce_max(cur_labels, axis=1),
                     false_fn=lambda: tf.zeros(shape=[batch, len(category_keys)]))
-
-            PADDED_SIZE = 100
 
             def get_sg(imgs_ids):
                 str_imgs_ids = [str(x.decode('utf-8')) for x in imgs_ids.numpy().tolist()]
@@ -585,23 +582,10 @@ class SGExtendMatchExtractor(LabelExtractor):
                                 sg_att_labels.append(att_id)
                                 num_labels += 1
 
-                num_padding = PADDED_SIZE - len(label_imgs_ids)
-                label_imgs_ids = label_imgs_ids + [-1] * num_padding
-                sg_obj_labels = sg_obj_labels + [-1] * num_padding
-                sg_att_categories = sg_att_categories + [-1] * num_padding
-                sg_att_labels = sg_att_labels + [-1] * num_padding
-                num_labels = max(1, num_labels)
                 return label_imgs_ids, sg_obj_labels, sg_att_categories, sg_att_labels, num_labels
 
-            sg_data = tf.py_function(func=get_sg, inp=[examples[InputDataFields.image_id]],
-                                     Tout=[tf.int32] * 5)
-            sg_data[0] = tf.reshape(sg_data[0], [100])
-            sg_data[1] = tf.reshape(sg_data[1], [100])
-            sg_data[2] = tf.reshape(sg_data[2], [100])
-            sg_data[3] = tf.reshape(sg_data[3], [100])
-
+            sg_data = tf.py_function(func=get_sg, inp=[examples[InputDataFields.image_id]], Tout=[tf.int32] * 5)
             return obj_labels, att_labels, sg_data
-
 
 
 def build_label_extractor(config):
