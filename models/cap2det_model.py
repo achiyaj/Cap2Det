@@ -383,7 +383,7 @@ class Model(ModelBase):
 
                 loss_dict['midn_cross_entropy_loss'] = tf.multiply(tf.reduce_mean(obj_losses), options.midn_loss_weight)
 
-                loss_dict['midn_sg_loss'] = self.build_midn_sg_loss(predictions, examples, sg_data)
+                # loss_dict['midn_sg_loss'] = self.build_midn_sg_loss(predictions, examples, sg_data)
 
             else:
                 obj_labels = self._label_extractor.extract_labels(examples)
@@ -458,7 +458,8 @@ class Model(ModelBase):
                     key: predictions[f'{key}_{Cap2DetPredictions.oicr_proposal_scores}_at_{i + 1}']
                     for key in self.att_categories.keys()
                 }
-                loss_dict[f'sg_oicr_cross_entropy_loss_at_{i + 1}'] = model_utils.calc_sg_oicr_loss(
+                loss_dict[
+                    f'sg_oicr_cross_entropy_loss_at_{i + 1}'] = options.sg_oicr_loss_weight * model_utils.calc_sg_oicr_loss(
                     obj_labels,
                     num_proposals,
                     proposals,

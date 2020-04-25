@@ -220,7 +220,10 @@ def calc_sg_oicr_loss(labels,
         def get_loss_cond():
             _, sg_oicr_cross_entropy_loss, total_num_boxes = \
                 tf.while_loop(cond, body, [tf.constant(0), tf.constant(0.0), tf.constant(0)])
-            return sg_oicr_cross_entropy_loss / tf.cast(total_num_boxes, tf.float32)
+            mean_sg_oicr_cross_entropy_loss = tf.cond(tf.equal(total_num_boxes, 0), lambda: 0.0,
+                                                      lambda: sg_oicr_cross_entropy_loss / tf.cast(total_num_boxes,
+                                                                                                   tf.float32))
+            return mean_sg_oicr_cross_entropy_loss
 
     sg_oicr_cross_entropy_loss = tf.cond(tf.equal(num_labels, tf.constant(0)), lambda: 0.0, lambda: get_loss_cond())
     return sg_oicr_cross_entropy_loss
