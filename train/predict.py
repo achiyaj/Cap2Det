@@ -33,6 +33,7 @@ import numpy as np
 import collections
 import tensorflow as tf
 from google.protobuf import text_format
+from scipy.special import softmax
 
 from tensorflow.python.platform import tf_logging as logging
 
@@ -86,6 +87,8 @@ flags.DEFINE_string('shard_indicator', '', '')
 
 flags.DEFINE_string('input_pattern', '', '')
 
+flags.DEFINE_string('labels_to_visualize', 'objs', '')
+
 FLAGS = flags.FLAGS
 
 try:
@@ -135,7 +138,7 @@ def _load_pipeline_proto(filename):
     return pipeline_proto
 
 
-def _visualize(examples, categories, filename):
+def _visualize(examples, categories, filename, labels_dict=None):
     """Visualizes exmaples.
 
     Args:
@@ -227,36 +230,22 @@ def _visualize(examples, categories, filename):
             gt_base64 = plotlib._py_convert_to_base64(image_with_gt)
 
             # Image with predicted boxes.
-
-            for i, dt_score in enumerate(dt_scores):
-                if dt_score < FLAGS.min_visl_detection_score:
-                    break
-
-            num_dt_boxes = min(i, num_dt_boxes)
-            dt_classes = dt_labels - 1
-            dt_labels = np.array(
-                [categories[int(x) - 1].encode('ascii') for x in dt_labels])
-
-            recall_mask, precision_mask = box_utils.py_evaluate_precision_and_recall(
-                num_gt_boxes, gt_boxes, gt_labels, num_dt_boxes, dt_boxes, dt_labels)
             image_with_dt = image.copy()
 
-            for i in range(num_dt_boxes - 1, -1, -1):
-                ymin, xmin, ymax, xmax = dt_boxes[i]
-                score = dt_scores[i]
-                label = '%s:%d%%' % (dt_labels[i].decode('ascii'),
-                                     int(score * 100 + 0.5))
-                draw_bounding_box_on_image_array(
-                    image_with_dt,
-                    ymin,
-                    xmin,
-                    ymax,
-                    xmax,
-                    color=STANDARD_COLORS[int(dt_classes[i])],
-                    display_str_list=[label],
-                    use_normalized_coordinates=True)
-            for i in range(num_dt_boxes - 1, -1, -1):
-                if precision_mask[i]:
+            if FLAGS.labels_to_visualize == 'objs':
+                for i, dt_score in enumerate(dt_scores):
+                    if dt_score < FLAGS.min_visl_detection_score:
+                        break
+
+                num_dt_boxes = min(i, num_dt_boxes)
+                dt_classes = dt_labels - 1
+                dt_labels = np.array(
+                    [categories[int(x) - 1].encode('ascii') for x in dt_labels])
+
+                recall_mask, precision_mask = box_utils.py_evaluate_precision_and_recall(
+                    num_gt_boxes, gt_boxes, gt_labels, num_dt_boxes, dt_boxes, dt_labels)
+
+                for i in range(num_dt_boxes - 1, -1, -1):
                     ymin, xmin, ymax, xmax = dt_boxes[i]
                     score = dt_scores[i]
                     label = '%s:%d%%' % (dt_labels[i].decode('ascii'),
@@ -267,7 +256,43 @@ def _visualize(examples, categories, filename):
                         xmin,
                         ymax,
                         xmax,
-                        color='lime',
+                        color=STANDARD_COLORS[int(dt_classes[i])],
+                        display_str_list=[label],
+                        use_normalized_coordinates=True)
+                for i in range(num_dt_boxes - 1, -1, -1):
+                    if precision_mask[i]:
+                        ymin, xmin, ymax, xmax = dt_boxes[i]
+                        score = dt_scores[i]
+                        label = '%s:%d%%' % (dt_labels[i].decode('ascii'),
+                                             int(score * 100 + 0.5))
+                        draw_bounding_box_on_image_array(
+                            image_with_dt,
+                            ymin,
+                            xmin,
+                            ymax,
+                            xmax,
+                            color='lime',
+                            display_str_list=[label],
+                            use_normalized_coordinates=True)
+            else:
+                num_boxes = 5
+                top_scores_idxs = np.argsort(example['atts_detection_scores'])[::-1][:5]
+                top_scores = np.take(example['atts_detection_scores'], top_scores_idxs)
+                top_labels = np.take(example['atts_detection_classes'], top_scores_idxs)
+                detection_boxes = example['atts_detection_boxes']
+
+                for i in range(num_boxes):
+                    ymin, xmin, ymax, xmax = detection_boxes[top_scores_idxs[i]]
+                    score = top_scores[i]
+                    label = '%s:%d%%' % (labels_dict[top_labels[i]],
+                                         int(score * 100 + 0.5))
+                    draw_bounding_box_on_image_array(
+                        image_with_dt,
+                        ymin,
+                        xmin,
+                        ymax,
+                        xmax,
+                        color=STANDARD_COLORS[0],
                         display_str_list=[label],
                         use_normalized_coordinates=True)
 
@@ -330,6 +355,16 @@ def _convert_coco_result_to_voc(boxes, scores, classes):
             det_classes, 0)
     else:
         return np.zeros((0, 4)), np.zeros((0)), np.zeros((0), dtype=np.int64)
+
+
+def pre_to_post_nms_mapping(pre_nms_boxes, post_nms_boxes):
+    indices = []
+    for i in range(post_nms_boxes.shape[0]):
+        cur_box = post_nms_boxes[i, :]
+        cur_diffs = np.sum(np.abs(pre_nms_boxes - cur_box), axis=1)
+        indices.append(np.argmin(cur_diffs))
+
+    return indices
 
 
 def _run_evaluation(pipeline_proto,
@@ -460,6 +495,20 @@ def _run_evaluation(pipeline_proto,
                 ]:
                     if name in examples:
                         visl_example[name] = examples[name][i]
+
+                if FLAGS.labels_to_visualize != 'objs':
+                    atts_oicr_str = f'{FLAGS.labels_to_visualize}_oicr_proposal_scores_at_3'
+                    assert atts_oicr_str in examples
+                    atts_scores = examples[atts_oicr_str][i, :, :]
+
+                    atts_labels_probs = softmax(atts_scores, axis=1)
+                    atts_dt_scores = np.max(atts_labels_probs, axis=1)
+                    atts_dt_labels = np.argmax(atts_labels_probs, axis=1)
+
+                    visl_example['atts_detection_boxes'] = examples['proposal_boxes'][i, :, :]
+                    visl_example['atts_detection_scores'] = atts_dt_scores
+                    visl_example['atts_detection_classes'] = atts_dt_labels
+
                 visl_examples.append(visl_example)
 
             # Write to detection result file.
@@ -491,9 +540,14 @@ def _run_evaluation(pipeline_proto,
             break
 
     # Visualize the results.
-
     if FLAGS.visl_file_path:
-        _visualize(visl_examples, class_labels, FLAGS.visl_file_path)
+        if FLAGS.labels_to_visualize == 'objs':
+            _visualize(visl_examples, class_labels, FLAGS.visl_file_path)
+        else:
+            att_categories_file = 'data/sg_extraction/att_categories.json'
+            category_labels_dict = json.load(open(att_categories_file, 'r'))[FLAGS.labels_to_visualize]
+            category_labels_dict = {i: key for i, key in enumerate(category_labels_dict.keys())}
+            _visualize(visl_examples, class_labels, FLAGS.visl_file_path, category_labels_dict)
 
     for oicr_iter, evaluator in enumerate(evaluators):
         metrics = evaluator.evaluate()
