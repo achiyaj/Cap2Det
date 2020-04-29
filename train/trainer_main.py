@@ -5,12 +5,8 @@ from __future__ import print_function
 import tensorflow as tf
 from google.protobuf import text_format
 
-# import pdb; pdb.set_trace()
-# import os
-# os.environ['PYTHONPATH'] = '/specific/netapp5_2/gamir/achiya/vqa/Cap2Det/'
-# os.environ['PATH'] = os.environ['PATH'] + ':/specific/netapp5_2/gamir/achiya/vqa/Cap2Det/'
-# os.environ['SYSPATH'] = '/specific/netapp5_2/gamir/achiya/vqa/Cap2Det/'
 import sys
+import socket
 
 sys.path.insert(0, '/specific/netapp5_2/gamir/achiya/vqa/Cap2Det_1st_attempt/')
 sys.path.insert(1, '/specific/netapp5_2/gamir/achiya/vqa/Cap2Det_1st_attempt/tensorflow_models/research/slim')
@@ -63,4 +59,5 @@ def main(_):
 
 
 if __name__ == '__main__':
+    print(f'Running on PC: {socket.gethostname()}')
     tf.app.run()

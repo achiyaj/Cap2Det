@@ -178,7 +178,9 @@ def calc_sg_oicr_loss(labels,
 
             cur_img_obj_scores_0 = tf.gather(scores_0, cur_img_id, axis=0)
             cur_img_obj_scores_1 = tf.gather(scores_1, cur_img_id, axis=0)
-            cur_obj_probs_0 = tf.squeeze(tf.gather(cur_img_obj_scores_0, cur_obj_label, axis=1))
+
+            # add 1 because the first entry contains the BG probability
+            cur_obj_probs_0 = tf.squeeze(tf.gather(cur_img_obj_scores_0, cur_obj_label + 1, axis=1))
             cur_att_probs_0 = tf.squeeze(tf.gather(att_category_scores_0, cur_att_label, axis=1))
             cur_img_proposals = tf.gather(proposals, cur_img_id, axis=0)
 
@@ -196,7 +198,8 @@ def calc_sg_oicr_loss(labels,
             relevant_obj_scores_1 = tf.gather(cur_img_obj_scores_1, relevant_boxes, axis=0)
             relevant_att_scores_1 = tf.gather(att_category_scores_1, relevant_boxes, axis=0)
 
-            obj_labels = tf.fill(tf.shape(relevant_boxes), cur_obj_label)
+            # add 1 because the first entry contains the BG probability
+            obj_labels = tf.fill(tf.shape(relevant_boxes), cur_obj_label + 1)
             att_labels = tf.fill(tf.shape(relevant_boxes), cur_att_label)
 
             objs_ce_loss = tf.reduce_sum(tf.nn.softmax_cross_entropy_with_logits(

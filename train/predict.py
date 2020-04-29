@@ -34,6 +34,7 @@ import collections
 import tensorflow as tf
 from google.protobuf import text_format
 from scipy.special import softmax
+import socket
 
 from tensorflow.python.platform import tf_logging as logging
 
@@ -690,4 +691,5 @@ def main(_):
 
 
 if __name__ == '__main__':
+    print(f'Running on PC: {socket.gethostname()}')
     tf.app.run()
