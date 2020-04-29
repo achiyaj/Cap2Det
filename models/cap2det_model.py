@@ -438,43 +438,35 @@ class Model(ModelBase):
 
                 proposal_scores_0 = tf.nn.softmax(proposal_scores_1, axis=-1)
 
-                for category_name in self.att_categories.keys():
-                    category_proposal_scores_1 = predictions[
-                        f'{category_name}_{Cap2DetPredictions.oicr_proposal_scores}_at_{i + 1}']
-                    # category_oicr_cross_entropy_loss_at_i = model_utils.calc_oicr_loss(
-                    #     att_labels[category_name],
-                    #     num_proposals,
-                    #     proposals,
-                    #     tf.stop_gradient(atts_proposal_scores_0_dict[category_name]),
-                    #     category_proposal_scores_1,
-                    #     scope=f'{category_name}_oicr_{i+1}',
-                    #     iou_threshold=options.oicr_iou_threshold)
-                    # loss_dict[f'{category_name}_oicr_cross_entropy_loss_at_{i + 1}'] = \
-                    #     category_oicr_cross_entropy_loss_at_i * options.oicr_loss_weight * options.atts_loss_weight
+                if len(self.att_categories) > 0:
+                    for category_name in self.att_categories.keys():
+                        category_proposal_scores_1 = predictions[
+                            f'{category_name}_{Cap2DetPredictions.oicr_proposal_scores}_at_{i + 1}']
 
-                    atts_proposal_scores_0_dict[category_name] = tf.nn.softmax(category_proposal_scores_1, axis=-1)
+                        atts_proposal_scores_0_dict[category_name] = tf.nn.softmax(category_proposal_scores_1, axis=-1)
 
-                atts_proposal_scores_1_dict = {
-                    key: predictions[f'{key}_{Cap2DetPredictions.oicr_proposal_scores}_at_{i + 1}']
-                    for key in self.att_categories.keys()
-                }
-                loss_dict[
-                    f'sg_oicr_cross_entropy_loss_at_{i + 1}'] = options.sg_oicr_loss_weight * model_utils.calc_sg_oicr_loss(
-                    obj_labels,
-                    num_proposals,
-                    proposals,
-                    tf.stop_gradient(proposal_scores_0),
-                    proposal_scores_1,
-                    atts_proposal_scores_0_dict,
-                    atts_proposal_scores_1_dict,
-                    sg_data,
-                    self.id2category,
-                    [len(x) for x in self.att_categories.values()],
-                    scope='oicr_{}'.format(i + 1),
-                    iou_threshold=options.oicr_iou_threshold)
+                    atts_proposal_scores_1_dict = {
+                        key: predictions[f'{key}_{Cap2DetPredictions.oicr_proposal_scores}_at_{i + 1}']
+                        for key in self.att_categories.keys()
+                    }
 
-                atts_proposal_scores_0_dict = {key: tf.nn.softmax(atts_proposal_scores_1_dict[key], axis=-1) for key in
-                                               self.att_categories.keys()}
+                    loss_dict[
+                        f'sg_oicr_cross_entropy_loss_at_{i + 1}'] = options.sg_oicr_loss_weight * model_utils.calc_sg_oicr_loss(
+                        obj_labels,
+                        num_proposals,
+                        proposals,
+                        tf.stop_gradient(proposal_scores_0),
+                        proposal_scores_1,
+                        atts_proposal_scores_0_dict,
+                        atts_proposal_scores_1_dict,
+                        sg_data,
+                        self.id2category,
+                        [len(x) for x in self.att_categories.values()],
+                        scope='oicr_{}'.format(i + 1),
+                        iou_threshold=options.oicr_iou_threshold)
+
+                    atts_proposal_scores_0_dict = {key: tf.nn.softmax(atts_proposal_scores_1_dict[key], axis=-1) for key in
+                                                   self.att_categories.keys()}
 
         return loss_dict
 
