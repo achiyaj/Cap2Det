@@ -1,9 +1,19 @@
 import json
 from tqdm import tqdm
 
-coco_train_sgs_file = 'data/sg_extraction/vacancy_train.json'
+# COCO Captions
+# coco_train_sgs_file = 'data/sg_extraction/vacancy_train.json'
+# output_file = 'data/sg_extraction/coco_{}_stats.json'
+
+# Conceptual Captions
+# sgs_file = '/specific/netapp5_2/gamir/datasets/ConceptualCaptions/scene_graphs/vacancy/train_data.json'
+# output_file = 'data/sg_extraction/cc_{}_stats.json'
+
+# Flickr30
+sgs_file = 'raw-data-flickr30k/flickr30_sgs.json'
+output_file = 'data/sg_extraction/flickr30_{}_stats.json'
+
 att_categories_file = 'data/sg_extraction/att_categories.json'
-output_file = 'data/sg_extraction/coco_{}_stats.json'
 objects_file = 'data/coco_label_synonyms.txt'
 relations_file = 'data/sg_extraction/relations_dict.json'
 
@@ -11,7 +21,7 @@ relations_file = 'data/sg_extraction/relations_dict.json'
 def main():
     att_categories = json.load(open(att_categories_file))
     att2cat = {att: cat for cat, cat_atts in att_categories.items() for att in cat_atts.keys()}
-    coco_train_sgs = json.load(open(coco_train_sgs_file))
+    coco_train_sgs = json.load(open(sgs_file))
     att_stats = {cat_name: {key: 0 for key in cat_atts.keys()} for cat_name, cat_atts in att_categories.items()}
     relevant_rels = list(json.load(open(relations_file)).keys())
     rel_stats = {rel: 0 for rel in relevant_rels}
