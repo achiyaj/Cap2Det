@@ -384,6 +384,10 @@ def _run_evaluation(pipeline_proto,
     """
     eval_count = 0
     visl_examples = []
+    if FLAGS.detection_result_dir:
+        os.makedirs(FLAGS.detection_result_dir, exist_ok=True)
+
+    CONF_THRESH = 0.01
 
     for examples in trainer.predict(pipeline_proto, checkpoint_path):
         batch_size = len(examples[InputDataFields.image_id])
@@ -521,9 +525,12 @@ def _run_evaluation(pipeline_proto,
 
                 image_id = int(image_id.decode('ascii'))
                 for i in range(num_detections):
+                    if detection_scores[i] < CONF_THRESH:
+                        break
                     ymin, xmin, ymax, xmax = detection_boxes[i]
                     ymin, xmin, ymax, xmax = int(ymin), int(xmin), int(ymax), int(xmax)
-                    category_id = class_labels[int(detection_classes[i] - 1)]
+                    # category_id = class_labels[int(detection_classes[i] - 1)]
+                    category_id = int(detection_classes[i]) - 1
                     results.append({
                         'image_id': image_id,
                         'category_id': category_id,
@@ -535,7 +542,7 @@ def _run_evaluation(pipeline_proto,
                                         '{}.json'.format(image_id))
                 with open(filename, 'w') as fid:
                     fid.write(json.dumps(results, indent=2))
-                tf.logging.info('image_id=%s, file=%s', image_id, filename)
+                # tf.logging.info('image_id=%s, file=%s', image_id, filename)
 
         if eval_count > FLAGS.max_eval_examples:
             break
