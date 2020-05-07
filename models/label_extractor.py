@@ -352,6 +352,24 @@ class TextClassifierMatchExtractor(LabelExtractor):
         with open(options.open_vocabulary_word_embedding_file, 'rb') as fid:
             self._open_vocabulary_word_embedding = np.load(fid)
 
+        try:
+            # build SGs dictionary
+            sgs_files = glob(options.sgs_file)
+            self.sgs_dict = {}
+            for file in sgs_files:
+                self.sgs_dict.update(json.load(open(file)))
+
+            self.att_categories = json.load(open(options.atts_file))
+            self.att2category = {att: cat_name for cat_name, cat_dict in self.att_categories.items() for att in
+                                 cat_dict.keys()}
+            self.att_to_ids = {att: (cat_id, att_id)
+                               for cat_id, (cat_name, cat_dict) in enumerate(self.att_categories.items())
+                               for att_id, att in enumerate(cat_dict.keys())}
+
+            self.extract_sg_data = True
+        except Exception as e:
+            self.extract_sg_data = False
+
     def _predict(self,
                  text_strings,
                  text_lengths,
