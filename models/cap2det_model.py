@@ -52,8 +52,8 @@ class Model(ModelBase):
 
         # add attributes data
         self.att_categories = {}
-        if type(self._label_extractor) == SGExtendMatchExtractor:
-            self.att_categories = json.load(open(options.label_extractor.sg_extend_match_extractor.atts_file))
+        if hasattr(self._label_extractor, 'att_categories'):
+            self.att_categories = self._label_extractor.att_categories
             self.id2category = {i: list(self.att_categories.keys())[i] for i in range(len(self.att_categories))}
 
     def _build_midn_network(self, num_proposals, proposal_features, num_classes):
@@ -451,7 +451,7 @@ class Model(ModelBase):
                     }
 
                     loss_dict[
-                        f'sg_oicr_cross_entropy_loss_at_{i + 1}'] = options.sg_oicr_loss_weight * model_utils.calc_sg_oicr_loss(
+                        f'sg_oicr_cross_entropy_loss_at_{i + 1}'] = model_utils.calc_sg_oicr_loss(
                         obj_labels,
                         num_proposals,
                         proposals,
@@ -463,7 +463,10 @@ class Model(ModelBase):
                         self.id2category,
                         [len(x) for x in self.att_categories.values()],
                         scope='oicr_{}'.format(i + 1),
-                        iou_threshold=options.oicr_iou_threshold)
+                        iou_threshold=options.oicr_iou_threshold,
+                        sg_obj_loss_weight=options.sg_obj_loss_weight,
+                        sg_att_loss_weight=options.sg_att_loss_weight
+                    )
 
                     atts_proposal_scores_0_dict = {key: tf.nn.softmax(atts_proposal_scores_1_dict[key], axis=-1) for key in
                                                    self.att_categories.keys()}

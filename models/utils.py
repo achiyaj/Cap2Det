@@ -121,7 +121,9 @@ def calc_sg_oicr_loss(labels,
                       id2category_dict,
                       num_atts_per_category,
                       scope,
-                      iou_threshold=0.5):
+                      iou_threshold=0.5,
+                      sg_obj_loss_weight=0.01,
+                      sg_att_loss_weight=0.01):
     """Calculates the NOD loss at refinement stage `i`.
 
     Args:
@@ -212,7 +214,7 @@ def calc_sg_oicr_loss(labels,
                 logits=relevant_att_scores_1,
                 dim=-1))
 
-            sg_oicr_cross_entropy_loss += objs_ce_loss + atts_ce_loss
+            sg_oicr_cross_entropy_loss += sg_obj_loss_weight * objs_ce_loss + sg_att_loss_weight * atts_ce_loss
             total_num_boxes += tf.shape(relevant_boxes)[0]
 
             return cur_label_idx + 1, sg_oicr_cross_entropy_loss, total_num_boxes
