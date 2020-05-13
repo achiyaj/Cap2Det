@@ -48,8 +48,13 @@ def main():
 
     for sg in tqdm(list(sgs_dict.values())):
         # att stats
-        cur_atts = [att for obj_data in sg['objects'].values() for att in obj_data['attributes'] if
-                    obj_data['label'] in relevant_objs]
+        cur_atts = []
+        for obj_data in sg['objects'].values():
+            obj_label_words = obj_data['label'].split(' ')
+            if not any([x in relevant_objs for x in obj_label_words]):
+                continue
+            cur_atts += obj_data['attributes']
+
         for att in cur_atts:
             if att not in att2cat:
                 continue
