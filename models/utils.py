@@ -121,9 +121,12 @@ def calc_sg_oicr_loss(labels,
                       id2category_dict,
                       num_atts_per_category,
                       scope,
+                      num_oicr_iter,
                       iou_threshold=0.5,
                       sg_obj_loss_weight=0.01,
-                      sg_att_loss_weight=0.01):
+                      sg_att_loss_weight=0.01,
+                      sg_rel_loss_weight=0.01,
+                      num_rels=-1):
     """Calculates the NOD loss at refinement stage `i`.
 
     Args:
@@ -148,7 +151,7 @@ def calc_sg_oicr_loss(labels,
     Returns:
       oicr_cross_entropy_loss: a scalar float tensor.
     """
-    label_imgs_ids, sg_obj_labels, sg_att_categories, sg_att_labels, num_labels = sg_data
+    label_imgs_ids, sg_obj_labels, sg_att_categories, sg_att_labels, num_labels, sg_rel_labels = sg_data
 
     all_att_dists_0 = tf.concat(list(att_scores_dict_0.values()), axis=2)
     all_att_dists_1 = tf.concat(list(att_scores_dict_1.values()), axis=2)
@@ -163,7 +166,7 @@ def calc_sg_oicr_loss(labels,
         (batch, max_num_proposals,
          num_classes_plus_one) = utils.get_tensor_shape(scores_0)
 
-        def body(cur_label_idx, sg_oicr_cross_entropy_loss, total_num_boxes):
+        def atts_body(cur_label_idx, sg_atts_oicr_cross_entropy_loss, total_num_boxes):
             cur_img_id = tf.gather(label_imgs_ids, cur_label_idx)
             cur_obj_label = tf.gather(sg_obj_labels, cur_label_idx)
             cur_att_cat = tf.gather(sg_att_categories, cur_label_idx)
@@ -214,23 +217,126 @@ def calc_sg_oicr_loss(labels,
                 logits=relevant_att_scores_1,
                 dim=-1))
 
-            sg_oicr_cross_entropy_loss += sg_obj_loss_weight * objs_ce_loss + sg_att_loss_weight * atts_ce_loss
+            sg_atts_oicr_cross_entropy_loss += sg_obj_loss_weight * objs_ce_loss + sg_att_loss_weight * atts_ce_loss
             total_num_boxes += tf.shape(relevant_boxes)[0]
 
-            return cur_label_idx + 1, sg_oicr_cross_entropy_loss, total_num_boxes
+            return cur_label_idx + 1, sg_atts_oicr_cross_entropy_loss, total_num_boxes
 
-        def cond(cur_label_idx, sg_oicr_cross_entropy_loss, total_num_boxes):
+        def atts_cond(cur_label_idx, sg_atts_oicr_cross_entropy_loss, total_num_boxes):
             return cur_label_idx < num_labels
 
-        def get_loss_cond():
-            _, sg_oicr_cross_entropy_loss, total_num_boxes = \
-                tf.while_loop(cond, body, [tf.constant(0), tf.constant(0.0), tf.constant(0)])
-            mean_sg_oicr_cross_entropy_loss = tf.cond(tf.equal(total_num_boxes, 0), lambda: 0.0,
-                                                      lambda: sg_oicr_cross_entropy_loss / tf.cast(total_num_boxes,
-                                                                                                   tf.float32))
-            return mean_sg_oicr_cross_entropy_loss
+        def rels_body(cur_label_idx, sg_rels_oicr_cross_entropy_loss, total_num_boxes):
+            cur_rels_data = tf.gather(sg_rel_labels, cur_label_idx)
+            cur_img_id = tf.gather(cur_rels_data, 0)
+            obj1_label = tf.gather(cur_rels_data, 1)
+            obj2_label = tf.gather(cur_rels_data, 2)
+            cur_rel_label = tf.gather(cur_rels_data, 3)
 
-    sg_oicr_cross_entropy_loss = tf.cond(tf.equal(num_labels, tf.constant(0)), lambda: 0.0, lambda: get_loss_cond())
+            cur_img_obj_scores_0 = tf.gather(scores_0, cur_img_id, axis=0)
+            cur_img_obj_scores_1 = tf.gather(scores_1, cur_img_id, axis=0)
+            cur_img_proposals = tf.gather(proposals, cur_img_id, axis=0)
+
+            # fix obj1 and maximize the probability product of the relation label and obj2
+
+            def calc_obj_rels_loss(fixed_obj_label, var_obj_label, rel_label, is_fixed_subj):
+                fixed_obj_idx = tf.argmax(tf.gather(cur_img_obj_scores_0, fixed_obj_label, axis=0))
+                fixed_obj_bbox = tf.gather(cur_img_proposals, fixed_obj_idx, axis=0)
+                var_obj_all_boxes_scores = tf.gather(cur_img_obj_scores_0, var_obj_label, axis=1)
+
+                fixed_obj_bbox_tiled = tf.tile(tf.expand_dims(fixed_obj_bbox, axis=0), [max_num_proposals, 1])
+
+                if is_fixed_subj:
+                    # the variable box comes first
+                    obj_boxes_pairs = tf.concat([cur_img_proposals, fixed_obj_bbox_tiled], axis=1)
+                else:
+                    # the fixed box comes first
+                    obj_boxes_pairs = tf.concat([fixed_obj_bbox_tiled, cur_img_proposals], axis=1)
+
+                obj_boxes_pairs = tf.ensure_shape(obj_boxes_pairs, [None, 8])
+
+                with tf.variable_scope("rels_fc", reuse=tf.AUTO_REUSE):
+                    rel_probs_0 = slim.fully_connected(
+                        obj_boxes_pairs,
+                        num_outputs=1 + num_rels,
+                        activation_fn=None,
+                        scope=f'oicr/iter{num_oicr_iter}')
+
+                    rel_probs_1 = slim.fully_connected(
+                        obj_boxes_pairs,
+                        num_outputs=1 + num_rels,
+                        activation_fn=None,
+                        scope=f'oicr/iter{num_oicr_iter + 1}')
+
+                cur_rel_probs_0 = tf.gather(rel_probs_0, rel_label, axis=1)
+
+                product_scores = tf.multiply(var_obj_all_boxes_scores, cur_rel_probs_0)
+                confident_proposal_idx = tf.cast(tf.argmax(product_scores), tf.int32)
+                confident_proposal = tf.gather(cur_img_proposals, confident_proposal_idx, axis=0)
+                confident_proposal_tiled = tf.tile(tf.expand_dims(confident_proposal, axis=0), [max_num_proposals, 1])
+
+                iou = box_utils.iou(tf.reshape(cur_img_proposals, [-1, 4]), confident_proposal_tiled)
+                iou = tf.reshape(iou, [max_num_proposals])
+
+                # Filter out irrelevant predictions using image-level label.
+
+                relevant_boxes = tf.boolean_mask(tf.range(max_num_proposals), tf.greater_equal(iou, iou_threshold))
+                relevant_obj_scores_1 = tf.gather(cur_img_obj_scores_1, relevant_boxes, axis=0)
+                relevant_rel_scores_1 = tf.gather(rel_probs_1, relevant_boxes, axis=0)
+
+                # add 1 because the first entry contains the BG probability
+                obj_labels = tf.fill(tf.shape(relevant_boxes), fixed_obj_label + 1)
+                rel_labels = tf.fill(tf.shape(relevant_boxes), cur_rel_label)
+
+                objs_ce_loss = tf.reduce_sum(tf.nn.softmax_cross_entropy_with_logits(
+                    labels=tf.stop_gradient(tf.one_hot(obj_labels, depth=num_classes_plus_one, axis=-1)),
+                    logits=relevant_obj_scores_1,
+                    dim=-1))
+
+                rels_ce_loss = tf.reduce_sum(tf.nn.softmax_cross_entropy_with_logits(
+                    labels=tf.stop_gradient(tf.one_hot(rel_labels, depth=tf.shape(relevant_rel_scores_1)[1], axis=-1)),
+                    logits=relevant_rel_scores_1,
+                    dim=-1))
+
+                return objs_ce_loss, rels_ce_loss, tf.shape(relevant_boxes)[0]
+
+            # obj1 is fixed and obj2 is varying
+            objs_ce_loss1, rels_ce_loss1, num_boxes1 = calc_obj_rels_loss(obj1_label, obj2_label, cur_rel_label, False)
+            objs_ce_loss2, rels_ce_loss2, num_boxes2 = calc_obj_rels_loss(obj2_label, obj1_label, cur_rel_label, True)
+
+            sg_rels_oicr_cross_entropy_loss += sg_obj_loss_weight * (objs_ce_loss1 + objs_ce_loss2) + \
+                                               sg_rel_loss_weight * (rels_ce_loss1 + rels_ce_loss2)
+            total_num_boxes += num_boxes1 + num_boxes2
+
+            return cur_label_idx + 1, sg_rels_oicr_cross_entropy_loss, total_num_boxes
+
+        def rels_cond(cur_label_idx, sg_rels_oicr_cross_entropy_loss, total_num_boxes):
+            return tf.greater(tf.shape(sg_rel_labels)[1], cur_label_idx)
+
+        def get_loss_cond():
+            _, sg_atts_oicr_cross_entropy_loss, total_num_boxes = \
+                tf.while_loop(atts_cond, atts_body, [tf.constant(0), tf.constant(0.0), tf.constant(0)])
+            mean_sg_atts_oicr_cross_entropy_loss = tf.cond(tf.equal(total_num_boxes, 0), lambda: 0.0,
+                                                           lambda: sg_atts_oicr_cross_entropy_loss / tf.cast(
+                                                               total_num_boxes,
+                                                               tf.float32))
+
+            if num_rels > -1:
+
+                _, sg_rels_oicr_cross_entropy_loss, total_num_boxes = \
+                    tf.while_loop(rels_cond, rels_body, [tf.constant(0), tf.constant(0.0), tf.constant(0)])
+                mean_sg_rels_oicr_cross_entropy_loss = \
+                    tf.cond(tf.equal(total_num_boxes, 0),
+                            lambda: 0.0,
+                            lambda: sg_rels_oicr_cross_entropy_loss / tf.cast(total_num_boxes, tf.float32)
+                            )
+
+                return mean_sg_atts_oicr_cross_entropy_loss + mean_sg_rels_oicr_cross_entropy_loss
+
+            return mean_sg_atts_oicr_cross_entropy_loss
+
+    sg_oicr_cross_entropy_loss = tf.cond(tf.equal(num_labels, tf.constant(0)), lambda: 0.0,
+                                              lambda: get_loss_cond())
+
     return sg_oicr_cross_entropy_loss
 
 

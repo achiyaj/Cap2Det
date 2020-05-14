@@ -599,6 +599,12 @@ class SGExtendMatchExtractor(LabelExtractor):
                            for cat_id, (cat_name, cat_dict) in enumerate(self.att_categories.items())
                            for att_id, att in enumerate(cat_dict.keys())}
 
+        try:
+            self.sg_rels = json.load(open(options.rels_file))
+            self.use_rels = True
+        except:
+            self.use_rels = False
+
     def extract_labels(self, examples):
         """Extracts the pseudo labels.
 
@@ -651,10 +657,10 @@ class SGExtendMatchExtractor(LabelExtractor):
                 sg_obj_labels = []
                 sg_att_categories = []
                 sg_att_labels = []
+                sg_rel_labels = []
                 num_labels = 0
                 for img_num, img_id in enumerate(str_imgs_ids):
                     sgs = [self.sgs_dict[x] for x in self.sgs_dict.keys() if x.startswith(f'{img_id}_')]
-
                     for sg in sgs:
                         for obj_data in sg['objects'].values():
                             if not obj_data['label'] in self._name2id.keys():
@@ -669,9 +675,19 @@ class SGExtendMatchExtractor(LabelExtractor):
                                 sg_att_labels.append(att_id)
                                 num_labels += 1
 
-                return label_imgs_ids, sg_obj_labels, sg_att_categories, sg_att_labels, num_labels
+                        if self.use_rels:
+                            for obj_ids, rel_label in sg['relations'].items():
+                                obj_ids = [int(x) for x in obj_ids[1:-1].split(', ')]
+                                if rel_label in self.sg_rels:
+                                    sg_rel_labels.append([img_num, obj_ids[0], obj_ids[1], self.sg_rels[rel_label]])
 
-            sg_data = tf.py_function(func=get_sg, inp=[examples[InputDataFields.image_id]], Tout=[tf.int32] * 5)
+                if len(sg_rel_labels) == 0:
+                    rels_data = np.array((0, 4), dtype=np.int32)
+                else:
+                    rels_data = np.array(sg_rel_labels)
+                return label_imgs_ids, sg_obj_labels, sg_att_categories, sg_att_labels, num_labels, rels_data
+
+            sg_data = tf.py_function(func=get_sg, inp=[examples[InputDataFields.image_id]], Tout=[tf.int32] * 6)
             return obj_labels, att_labels, sg_data
 
 

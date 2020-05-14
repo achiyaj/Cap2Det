@@ -56,6 +56,12 @@ class Model(ModelBase):
             self.att_categories = self._label_extractor.att_categories
             self.id2category = {i: list(self.att_categories.keys())[i] for i in range(len(self.att_categories))}
 
+        if hasattr(self._label_extractor, 'sg_rels'):
+            self.sg_rels = self._label_extractor.sg_rels
+            self.use_rels = True
+        else:
+            self.use_rels = False
+
     def _build_midn_network(self, num_proposals, proposal_features, num_classes):
         """Builds the Multiple Instance Detection Network.
 
@@ -463,9 +469,11 @@ class Model(ModelBase):
                         self.id2category,
                         [len(x) for x in self.att_categories.values()],
                         scope='oicr_{}'.format(i + 1),
+                        num_oicr_iter=i,
                         iou_threshold=options.oicr_iou_threshold,
                         sg_obj_loss_weight=options.sg_obj_loss_weight,
-                        sg_att_loss_weight=options.sg_att_loss_weight
+                        sg_att_loss_weight=options.sg_att_loss_weight,
+                        num_rels=len(self.sg_rels) if self.use_rels else -1
                     )
 
                     atts_proposal_scores_0_dict = {key: tf.nn.softmax(atts_proposal_scores_1_dict[key], axis=-1) for key in
