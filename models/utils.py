@@ -151,7 +151,9 @@ def calc_sg_oicr_loss(labels,
     Returns:
       oicr_cross_entropy_loss: a scalar float tensor.
     """
-    label_imgs_ids, sg_obj_labels, sg_att_categories, sg_att_labels, num_labels, sg_rel_labels = sg_data
+    label_imgs_ids, sg_obj_labels, sg_att_categories, sg_att_labels, num_labels = sg_data[:5]
+    if num_rels > -1:
+        sg_rel_labels = sg_data[5]
 
     all_att_dists_0 = tf.concat(list(att_scores_dict_0.values()), axis=2)
     all_att_dists_1 = tf.concat(list(att_scores_dict_1.values()), axis=2)

@@ -682,7 +682,7 @@ class SGExtendMatchExtractor(LabelExtractor):
                                     sg_rel_labels.append([img_num, obj_ids[0], obj_ids[1], self.sg_rels[rel_label]])
 
                 if len(sg_rel_labels) == 0:
-                    rels_data = np.array((0, 4), dtype=np.int32)
+                    rels_data = np.zeros((0, 4), dtype=np.int32)
                 else:
                     rels_data = np.array(sg_rel_labels)
                 return label_imgs_ids, sg_obj_labels, sg_att_categories, sg_att_labels, num_labels, rels_data
