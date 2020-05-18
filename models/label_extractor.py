@@ -677,9 +677,15 @@ class SGExtendMatchExtractor(LabelExtractor):
 
                         if self.use_rels:
                             for obj_ids, rel_label in sg['relations'].items():
-                                obj_ids = [int(x) for x in obj_ids[1:-1].split(', ')]
-                                if rel_label in self.sg_rels:
-                                    sg_rel_labels.append([img_num, obj_ids[0], obj_ids[1], self.sg_rels[rel_label]])
+                                obj_id1, obj_id2 = obj_ids[1:-1].split(', ')
+                                obj_label_str1 = sg['objects'][obj_id1]['label']
+                                obj_label_str2 = sg['objects'][obj_id2]['label']
+                                if not (obj_label_str1 in self._name2id and obj_label_str2 in self._name2id
+                                        and rel_label in self.sg_rels
+                                        and self._name2id[obj_label_str1] != self._name2id[obj_label_str2]):
+                                    continue
+                                sg_rel_labels.append([img_num, self._name2id[obj_label_str1],
+                                                      self._name2id[obj_label_str2], self.sg_rels[rel_label]])
 
                 if len(sg_rel_labels) == 0:
                     rels_data = np.zeros((0, 4), dtype=np.int32)

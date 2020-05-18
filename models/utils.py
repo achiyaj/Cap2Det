@@ -323,7 +323,7 @@ def calc_sg_oicr_loss(labels,
                 return objs_ce_loss, rels_ce_loss, tf.shape(relevant_boxes)[0]
 
             def calc_obj_rels_loss_first_oicr_iters(obj1_label, obj2_label, rel_label):
-                obj1_idx = tf.argmax(tf.gather(cur_img_obj_scores_0, obj1_label, axis=0))
+                obj1_idx = tf.argmax(tf.gather(cur_img_obj_scores_0, obj1_label, axis=1))
                 obj1_bbox = tf.gather(cur_img_proposals, obj1_idx, axis=0)
                 obj1_bbox_tiled = tf.tile(tf.expand_dims(obj1_bbox, axis=0), [max_num_proposals, 1])
                 obj1_iou = box_utils.iou(tf.reshape(cur_img_proposals, [-1, 4]), obj1_bbox_tiled)
@@ -332,7 +332,7 @@ def calc_sg_oicr_loss(labels,
                     tf.boolean_mask(tf.range(max_num_proposals), tf.greater_equal(obj1_iou, iou_threshold))
                 obj1_relevant_boxes = tf.gather(cur_img_proposals, obj1_relevant_boxes_idxs, axis=0)
 
-                obj2_idx = tf.argmax(tf.gather(cur_img_obj_scores_0, obj2_label, axis=0))
+                obj2_idx = tf.argmax(tf.gather(cur_img_obj_scores_0, obj2_label, axis=1))
                 obj2_bbox = tf.gather(cur_img_proposals, obj2_idx, axis=0)
                 obj2_bbox_tiled = tf.tile(tf.expand_dims(obj2_bbox, axis=0), [max_num_proposals, 1])
                 obj2_iou = box_utils.iou(tf.reshape(cur_img_proposals, [-1, 4]), obj2_bbox_tiled)
@@ -350,12 +350,11 @@ def calc_sg_oicr_loss(labels,
                         activation_fn=None,
                         scope=f'oicr/iter{num_oicr_iter}')
 
-                rel_labels = tf.fill([tf.shape(interleaved_bboxes)[0]], cur_rel_label)
+                rel_labels = tf.fill([tf.shape(interleaved_bboxes)[0]], rel_label)
 
                 rels_ce_loss = tf.reduce_sum(tf.nn.softmax_cross_entropy_with_logits(
                     labels=tf.stop_gradient(tf.one_hot(rel_labels, depth=tf.shape(rel_probs)[1], axis=-1)),
-                        logits=rel_probs,
-                    dim=-1))
+                    logits=rel_probs, dim=-1))
 
                 return rels_ce_loss, tf.shape(interleaved_bboxes)[0]
 
@@ -389,7 +388,7 @@ def calc_sg_oicr_loss(labels,
             return cur_label_idx + 1, objs_loss, rels_loss, num_obj_boxes, num_rel_boxes
 
         def rels_cond(cur_label_idx, objs_loss, rels_loss, num_obj_boxes, num_rel_boxes):
-            return tf.greater(tf.shape(sg_rel_labels)[1], cur_label_idx)
+            return tf.greater(tf.shape(sg_rel_labels)[0], cur_label_idx)
 
         def get_loss_cond():
             _, sg_atts_oicr_cross_entropy_loss, total_num_boxes = \
