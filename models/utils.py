@@ -341,7 +341,10 @@ def calc_sg_oicr_loss(labels,
                     tf.boolean_mask(tf.range(max_num_proposals), tf.greater_equal(obj2_iou, iou_threshold))
                 obj2_relevant_boxes = tf.gather(cur_img_proposals, obj2_relevant_boxes_idxs, axis=0)
 
-                interleaved_bboxes = interleave_bboxes(obj1_relevant_boxes, obj2_relevant_boxes)
+                num_interleaved_boxes = tf.shape(obj1_relevant_boxes)[0] * tf.shape(obj2_relevant_boxes)[0]
+                interleaved_bboxes = tf.cond(tf.greater(num_interleaved_boxes, 0),
+                                             lambda: interleave_bboxes(obj1_relevant_boxes, obj2_relevant_boxes),
+                                             lambda: tf.zeros([0, 8]))
 
                 with tf.variable_scope("rels_fc", reuse=tf.AUTO_REUSE):
                     rel_probs = slim.fully_connected(
