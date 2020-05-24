@@ -473,6 +473,7 @@ class Model(ModelBase):
                         iou_threshold=options.oicr_iou_threshold,
                         sg_obj_loss_weight=options.sg_obj_loss_weight,
                         sg_att_loss_weight=options.sg_att_loss_weight,
+                        sg_rel_loss_weight=options.sg_rel_loss_weight if self.use_rels else 0,
                         num_rels=len(self.sg_rels) if self.use_rels else -1
                     )
 
