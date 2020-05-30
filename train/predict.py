@@ -389,6 +389,8 @@ def _run_evaluation(pipeline_proto,
 
     MAX_NUM_BOXES = 100
 
+    file_labels_dict = json.load(open('data/coco_code_to_file_mapping.json'))
+
     for examples in trainer.predict(pipeline_proto, checkpoint_path):
         batch_size = len(examples[InputDataFields.image_id])
         summary_bytes = examples['summary']
@@ -530,7 +532,7 @@ def _run_evaluation(pipeline_proto,
                     ymin, xmin, ymax, xmax = detection_boxes[i]
                     ymin, xmin, ymax, xmax = int(ymin), int(xmin), int(ymax), int(xmax)
                     # category_id = class_labels[int(detection_classes[i] - 1)]
-                    category_id = int(detection_classes[i])
+                    category_id = file_labels_dict[str(int(detection_classes[i]))]
                     results.append({
                         "image_id": image_id,
                         "category_id": category_id,
