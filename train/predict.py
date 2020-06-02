@@ -68,6 +68,8 @@ flags.DEFINE_integer('min_eval_steps', 200, 'Minimum eval steps.')
 
 flags.DEFINE_integer('number_of_evaluators', 4, 'Number of evaluators.')
 
+flags.DEFINE_integer('ckpt_num', -1, 'checkpoint step to eval')
+
 flags.DEFINE_string('results_dir', 'results',
                     'Path to the directory saving results.')
 
@@ -685,7 +687,10 @@ def main(_):
         if FLAGS.eval_best_model:
             checkpoint_path = get_best_model_checkpoint(FLAGS.saved_ckpts_dir)
         else:
-            checkpoint_path = tf.train.latest_checkpoint(FLAGS.model_dir)
+            if FLAGS.ckpt_num == -1:
+                checkpoint_path = tf.train.latest_checkpoint(FLAGS.model_dir)
+            else:
+                checkpoint_path = os.path.join(FLAGS.model_dir, f'model.ckpt-{FLAGS.ckpt_num}')
         tf.logging.info('Start to evaluate checkpoint %s.', checkpoint_path)
 
         summary, metric = _run_evaluation(
