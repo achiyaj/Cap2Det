@@ -141,7 +141,7 @@ def _load_pipeline_proto(filename):
     return pipeline_proto
 
 
-def _visualize(examples, categories, filename, labels_dict=None):
+def _visualize(examples, categories, filename, labels_dict=None, rels_dict=None):
     """Visualizes exmaples.
 
     Args:
@@ -181,6 +181,14 @@ def _visualize(examples, categories, filename, labels_dict=None):
                     captions.append(' '.join(
                         [x.decode('ascii') for x in caption_string[:caption_length]]))
                 caption_annot = '</br>'.join(captions)
+
+            # if rels predcition is present, generate rels caption
+            if 'rel_class' in example:
+                opposite_rels_dict = {v: k for k, v in rels_dict.items()}
+                rel_obj1 = categories[int(dt_labels[example['rel_boxes'][0]]) - 1]
+                rel_obj2 = categories[int(dt_labels[example['rel_boxes'][1]]) - 1]
+                rel_text = opposite_rels_dict[example['rel_class']]
+                rel_annot = f'Predicted relation: {rel_obj1} {rel_text} {rel_obj2}'
 
             # Generated image-level ground-truth.
 
@@ -307,9 +315,14 @@ def _visualize(examples, categories, filename, labels_dict=None):
             fid.write('<tr>')
             fid.write('<td>%s</td>' % (image_id.decode('ascii')))
             # fid.write('<td><img src="data:image/jpg;base64,%s"></td>' % (img_base64))
-            fid.write(
-                '<td><img src="data:image/jpg;base64,%s"></br>%s</br>GT: %s</br>PS: %s</td>'
-                % (gt_base64, caption_annot, labels_gt_annot, labels_ps_annot))
+            if 'rel_class' in example:
+                fid.write(
+                    '<td><img src="data:image/jpg;base64,%s"></br>%s</br></br>%s</br>GT: %s</br>PS: %s</td>'
+                    % (gt_base64, caption_annot, rel_annot, labels_gt_annot, labels_ps_annot))
+            else:
+                fid.write(
+                    '<td><img src="data:image/jpg;base64,%s"></br>%s</br>GT: %s</br>PS: %s</td>'
+                    % (gt_base64, caption_annot, labels_gt_annot, labels_ps_annot))
             fid.write('<td><img src="data:image/jpg;base64,%s"></td>' % (dt_base64))
             fid.write('</tr>')
         fid.write('</table>')
@@ -496,6 +509,10 @@ def _run_evaluation(pipeline_proto,
                     DetectionResultFields.detection_classes:
                         detection_classes
                 }
+                if 'rel_class' in examples:
+                    visl_example['rel_class'] = examples['rel_class']
+                    visl_example['rel_prob'] = examples['rel_prob']
+                    visl_example['rel_boxes'] = examples['rel_boxes']
                 for name in [
                     InputDataFields.num_captions, InputDataFields.caption_strings,
                     InputDataFields.caption_lengths,
@@ -553,13 +570,17 @@ def _run_evaluation(pipeline_proto,
 
     # Visualize the results.
     if FLAGS.visl_file_path:
+        rels_dict = None
+        if 'rel_class' in visl_examples[0]:
+            rel_categories_file = 'data/sg_extraction/sg_rels.json'
+            rels_dict = json.load(open(rel_categories_file, 'r'))
         if FLAGS.labels_to_visualize == 'objs':
-            _visualize(visl_examples, class_labels, FLAGS.visl_file_path)
+            _visualize(visl_examples, class_labels, FLAGS.visl_file_path, rels_dict=rels_dict)
         else:
             att_categories_file = 'data/sg_extraction/att_categories.json'
             category_labels_dict = json.load(open(att_categories_file, 'r'))[FLAGS.labels_to_visualize]
             category_labels_dict = {i: key for i, key in enumerate(category_labels_dict.keys())}
-            _visualize(visl_examples, class_labels, FLAGS.visl_file_path, category_labels_dict)
+            _visualize(visl_examples, class_labels, FLAGS.visl_file_path, category_labels_dict, rels_dict=rels_dict)
 
     for oicr_iter, evaluator in enumerate(evaluators):
         metrics = evaluator.evaluate()

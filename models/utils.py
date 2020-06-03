@@ -131,6 +131,27 @@ def interleave_bboxes(bboxes_1, bboxes_2):
     return interleaved_bboxes
 
 
+def bboxes_combinations(bboxes):
+    num_bboxes = tf.shape(bboxes)[0]
+
+    def body(output_arr, bbox_idx):
+        cur_bbox = tf.gather(bboxes, bbox_idx, axis=0)
+        cur_bbox_tiled = tf.tile(tf.expand_dims(cur_bbox, axis=0), [num_bboxes - 1, 1])
+        bboxes_without_cur_box = tf.concat([bboxes[:bbox_idx, :], bboxes[bbox_idx + 1:, :]], axis=0)
+        concated_bboxes = tf.concat([cur_bbox_tiled, bboxes_without_cur_box], axis=1)
+        output_arr = output_arr.write(bbox_idx, concated_bboxes)
+
+        return output_arr, bbox_idx + 1
+
+    def cond(output_arr, bbox_idx):
+        return tf.greater(num_bboxes, bbox_idx)
+
+    interleaved_bboxes, _ = \
+        tf.while_loop(cond, body, [tf.TensorArray(dtype=tf.float32, size=num_bboxes), tf.constant(0)])
+    interleaved_bboxes = tf.reshape(interleaved_bboxes.stack(), [-1, 8])
+    return interleaved_bboxes
+
+
 def calc_sg_oicr_loss(labels,
                       num_proposals,
                       proposals,

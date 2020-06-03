@@ -305,6 +305,40 @@ class Model(ModelBase):
         predictions_aggregated.update(
             self._postprocess(inputs, predictions_aggregated))
 
+        # if model is with rels classifier, calculate the rels probabilities for all of their combinations
+        try:
+            rels_file = options.label_extractor.sg_extend_match_extractor.rels_file
+            NUM_DETECTIONS = 5
+            top_detections = predictions_aggregated['detection_boxes_at_3'][0, :NUM_DETECTIONS, :]
+            interleaved_boxes = model_utils.bboxes_combinations(top_detections)
+            num_rels = len(json.load(open(rels_file)))
+            with tf.variable_scope("rels_fc", reuse=tf.AUTO_REUSE):
+                rel_scores = slim.fully_connected(
+                    interleaved_boxes,
+                    num_outputs=1 + num_rels,
+                    activation_fn=None,
+                    scope=f'oicr/iter3')
+
+            all_rels_probs = tf.nn.softmax(rel_scores, axis=1)
+            rels_classes = tf.argmax(all_rels_probs, axis=1)
+            rels_probs = tf.reduce_max(all_rels_probs, axis=1)
+            most_prob_rel_idx = tf.argmax(rels_probs)
+
+            def get_num_boxes(boxes_pair_idx):
+                int_boxes_pair_idx = boxes_pair_idx.numpy().item()
+                first_box = int(int_boxes_pair_idx / (NUM_DETECTIONS - 1))
+                boxes_remainer = int_boxes_pair_idx % (NUM_DETECTIONS - 1)
+                second_box = boxes_remainer if boxes_remainer < first_box else boxes_remainer + 1
+
+                return np.array([first_box, second_box], dtype=np.int64)
+
+            predictions_aggregated['rel_class'] = tf.gather(rels_classes, most_prob_rel_idx)
+            predictions_aggregated['rel_prob'] = tf.reduce_max(rels_probs)
+            predictions_aggregated['rel_boxes'] = tf.py_function(func=get_num_boxes, inp=[most_prob_rel_idx], Tout=tf.int64)
+
+        except:
+            pass
+
         return predictions_aggregated
 
     def build_midn_sg_loss(self, predictions, examples, sg_data):
