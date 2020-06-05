@@ -166,6 +166,7 @@ def _visualize(examples, categories, filename, labels_dict=None, rels_dict=None)
                            example[DetectionResultFields.detection_classes])
 
             # Print captions.
+            rel_exists = 'rel_class' in example and example['rel_class'] != -1
 
             caption_annot = ''
             if (InputDataFields.num_captions in example and
@@ -183,7 +184,7 @@ def _visualize(examples, categories, filename, labels_dict=None, rels_dict=None)
                 caption_annot = '</br>'.join(captions)
 
             # if rels predcition is present, generate rels caption
-            if 'rel_class' in example and example['rel_class'] != -1:
+            if rel_exists:
                 opposite_rels_dict = {v: k for k, v in rels_dict.items()}
                 rel_obj1 = categories[int(dt_labels[example['rel_boxes'][0]]) - 1]
                 rel_obj2 = categories[int(dt_labels[example['rel_boxes'][1]]) - 1]
@@ -315,10 +316,11 @@ def _visualize(examples, categories, filename, labels_dict=None, rels_dict=None)
             fid.write('<tr>')
             fid.write('<td>%s</td>' % (image_id.decode('ascii')))
             # fid.write('<td><img src="data:image/jpg;base64,%s"></td>' % (img_base64))
-            if 'rel_class' in example:
+            if rel_exists:
+                objs_annot = 'Detected objects: ' + ', '.join([dt_labels[dt_idx].decode('ascii') for dt_idx in range(num_dt_boxes)])
                 fid.write(
-                    '<td><img src="data:image/jpg;base64,%s"></br>%s</br></br>%s</br>GT: %s</br>PS: %s</td>'
-                    % (gt_base64, caption_annot, rel_annot, labels_gt_annot, labels_ps_annot))
+                    '<td><img src="data:image/jpg;base64,%s"></br>%s</br>%s</br></br>%s</br>GT: %s</br>PS: %s</td>'
+                    % (gt_base64, caption_annot, objs_annot, rel_annot, labels_gt_annot, labels_ps_annot))
             else:
                 fid.write(
                     '<td><img src="data:image/jpg;base64,%s"></br>%s</br>GT: %s</br>PS: %s</td>'
