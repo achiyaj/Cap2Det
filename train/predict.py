@@ -183,7 +183,7 @@ def _visualize(examples, categories, filename, labels_dict=None, rels_dict=None)
                 caption_annot = '</br>'.join(captions)
 
             # if rels predcition is present, generate rels caption
-            if 'rel_class' in example:
+            if 'rel_class' in example and example['rel_class'] != -1:
                 opposite_rels_dict = {v: k for k, v in rels_dict.items()}
                 rel_obj1 = categories[int(dt_labels[example['rel_boxes'][0]]) - 1]
                 rel_obj2 = categories[int(dt_labels[example['rel_boxes'][1]]) - 1]

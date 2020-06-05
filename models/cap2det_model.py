@@ -306,38 +306,56 @@ class Model(ModelBase):
             self._postprocess(inputs, predictions_aggregated))
 
         # if model is with rels classifier, calculate the rels probabilities for all of their combinations
-        try:
-            rels_file = options.label_extractor.sg_extend_match_extractor.rels_file
-            NUM_DETECTIONS = 5
-            top_detections = predictions_aggregated['detection_boxes_at_3'][0, :NUM_DETECTIONS, :]
-            interleaved_boxes = model_utils.bboxes_combinations(top_detections)
+        rels_file = options.label_extractor.sg_extend_match_extractor.rels_file
+        if rels_file != '':
+            CONF_THRESH = 0.05
+
+            detection_scores = tf.squeeze(predictions_aggregated['detection_scores_at_3'])
+            detection_boxes = tf.squeeze(predictions_aggregated['detection_boxes_at_3'])
+            detections_boxes_over_thresh = tf.boolean_mask(detection_boxes, tf.greater(detection_scores, CONF_THRESH),
+                                                           axis=0)
+
             num_rels = len(json.load(open(rels_file)))
-            with tf.variable_scope("rels_fc", reuse=tf.AUTO_REUSE):
-                rel_scores = slim.fully_connected(
-                    interleaved_boxes,
-                    num_outputs=1 + num_rels,
-                    activation_fn=None,
-                    scope=f'oicr/iter3')
 
-            all_rels_probs = tf.nn.softmax(rel_scores, axis=1)
-            rels_classes = tf.argmax(all_rels_probs, axis=1)
-            rels_probs = tf.reduce_max(all_rels_probs, axis=1)
-            most_prob_rel_idx = tf.argmax(rels_probs)
-
-            def get_num_boxes(boxes_pair_idx):
+            def get_num_boxes(boxes_pair_idx, num_dt_boxes):
                 int_boxes_pair_idx = boxes_pair_idx.numpy().item()
-                first_box = int(int_boxes_pair_idx / (NUM_DETECTIONS - 1))
-                boxes_remainer = int_boxes_pair_idx % (NUM_DETECTIONS - 1)
+                int_num_dt_boxes = num_dt_boxes.numpy().item()
+                first_box = int(int_boxes_pair_idx / (int_num_dt_boxes - 1))
+                boxes_remainer = int_boxes_pair_idx % (int_num_dt_boxes - 1)
                 second_box = boxes_remainer if boxes_remainer < first_box else boxes_remainer + 1
 
-                return np.array([first_box, second_box], dtype=np.int64)
+                return float(first_box), float(second_box)
 
-            predictions_aggregated['rel_class'] = tf.gather(rels_classes, most_prob_rel_idx)
-            predictions_aggregated['rel_prob'] = tf.reduce_max(rels_probs)
-            predictions_aggregated['rel_boxes'] = tf.py_function(func=get_num_boxes, inp=[most_prob_rel_idx], Tout=tf.int64)
+            def get_rel_preds():
+                interleaved_boxes = model_utils.bboxes_combinations(detections_boxes_over_thresh)
+                with tf.variable_scope("rels_fc", reuse=tf.AUTO_REUSE):
+                    rel_scores = slim.fully_connected(
+                        interleaved_boxes,
+                        num_outputs=1 + num_rels,
+                        activation_fn=None,
+                        scope=f'oicr/iter3')
 
-        except:
-            pass
+                all_rels_probs = tf.nn.softmax(rel_scores, axis=1)
+                rels_classes = tf.argmax(all_rels_probs, axis=1)
+                rels_probs = tf.reduce_max(all_rels_probs, axis=1)
+                most_prob_rel_idx = tf.argmax(rels_probs)
+
+                rel_class = tf.cast(tf.gather(rels_classes, most_prob_rel_idx), tf.float32)
+                rel_prob = tf.reduce_max(rels_probs)
+
+                get_rel_boxes = lambda: tf.py_function(func=get_num_boxes, inp=[most_prob_rel_idx, tf.shape(
+                    detections_boxes_over_thresh)[0]], Tout=[tf.float32, tf.float32])
+                rel_box1, rel_box2 = get_rel_boxes()
+
+                return tf.stack([rel_class, rel_prob, rel_box1, rel_box2], axis=0)
+
+            rels_data = tf.cond(tf.greater(tf.shape(detections_boxes_over_thresh)[0], 1),
+                                true_fn=lambda: get_rel_preds(),
+                                false_fn=lambda: tf.fill([4, ], -1.0))
+
+            predictions_aggregated['rel_class'] = tf.cast(rels_data[0], tf.int32)
+            predictions_aggregated['rel_prob'] = rels_data[1]
+            predictions_aggregated['rel_boxes'] = tf.cast(rels_data[2:], tf.int32)
 
         return predictions_aggregated
 
