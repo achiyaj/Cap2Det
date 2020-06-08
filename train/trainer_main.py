@@ -62,5 +62,6 @@ def main(_):
 
 if __name__ == '__main__':
     print(f'Running on PC: {socket.gethostname()}')
-    process = subprocess.Popen(['python', '-u', 'train/ckpts_saver.py', '--model_dir', FLAGS.model_dir])
+    process = subprocess.Popen(['nice',  '-n',  '10', 'python', '-u', 'train/ckpts_saver.py', '--model_dir',
+                                FLAGS.model_dir])
     tf.app.run()
