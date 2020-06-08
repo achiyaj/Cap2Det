@@ -14,7 +14,7 @@ sys.path.insert(1, '/specific/netapp5_2/gamir/achiya/vqa/Cap2Det_1st_attempt/ten
 
 from protos import pipeline_pb2
 from train import trainer
-from train.ckpts_saver import ckpts_saver
+import subprocess
 
 flags = tf.app.flags
 
@@ -62,6 +62,5 @@ def main(_):
 
 if __name__ == '__main__':
     print(f'Running on PC: {socket.gethostname()}')
-    saver_process = multiprocessing.Process(target=ckpts_saver, args=(FLAGS.model_dir, ), daemon=True)
-    saver_process.start()
+    process = subprocess.Popen(['python', '-u', 'train/ckpts_saver.py', '--model_dir', FLAGS.model_dir])
     tf.app.run()
