@@ -713,7 +713,7 @@ def main(_):
             if FLAGS.ckpt_num == -1:
                 checkpoint_path = tf.train.latest_checkpoint(FLAGS.model_dir)
             else:
-                checkpoint_path = os.path.join(FLAGS.model_dir, f'model.ckpt-{FLAGS.ckpt_num}')
+                checkpoint_path = os.path.join(FLAGS.model_dir, 'ckpts', f'model.ckpt-{FLAGS.ckpt_num}')
         tf.logging.info('Start to evaluate checkpoint %s.', checkpoint_path)
 
         summary, metric = _run_evaluation(
