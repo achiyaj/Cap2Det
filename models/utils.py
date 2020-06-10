@@ -285,25 +285,23 @@ def calc_sg_oicr_loss(labels,
             def calc_obj_rels_loss_late_oicr_iters(fixed_obj_label, var_obj_label, rel_label, is_fixed_subj):
                 fixed_obj_idx = tf.argmax(tf.gather(cur_img_obj_scores_0, fixed_obj_label, axis=0))
                 fixed_obj_bbox = tf.gather(cur_img_proposals, fixed_obj_idx, axis=0)
-                var_obj_all_boxes_scores = tf.gather(cur_img_obj_scores_0, var_obj_label, axis=1)
-
                 fixed_obj_bbox_tiled = tf.tile(tf.expand_dims(fixed_obj_bbox, axis=0), [max_num_proposals, 1])
+                var_obj_all_boxes_scores = tf.gather(cur_img_obj_scores_0, var_obj_label, axis=1)
 
                 # get object distributions of bounding boxes and feed to relations classifier
                 fixed_obj_objs_dist_tiled = tf.tile(tf.expand_dims(tf.gather(
                     cur_img_obj_scores_0, fixed_obj_idx, axis=0),  axis=0), [max_num_proposals, 1])
-                proposals_objs_dist_tiled = cur_img_obj_scores_0
 
                 if is_fixed_subj:
                     # the variable box comes first
                     obj_boxes_pairs = tf.concat(
-                        [cur_img_proposals, fixed_obj_bbox_tiled, proposals_objs_dist_tiled, fixed_obj_objs_dist_tiled],
+                        [cur_img_proposals, fixed_obj_bbox_tiled, cur_img_obj_scores_0, fixed_obj_objs_dist_tiled],
                         axis=1
                     )
                 else:
                     # the fixed box comes first
                     obj_boxes_pairs = tf.concat(
-                        [fixed_obj_bbox_tiled, cur_img_proposals, fixed_obj_objs_dist_tiled, proposals_objs_dist_tiled],
+                        [fixed_obj_bbox_tiled, cur_img_proposals, fixed_obj_objs_dist_tiled, cur_img_obj_scores_0],
                         axis=1
                     )
 
@@ -355,25 +353,21 @@ def calc_sg_oicr_loss(labels,
                 return objs_ce_loss, rels_ce_loss, tf.shape(relevant_boxes)[0]
 
             def calc_obj_rels_loss_first_oicr_iters(obj1_label, obj2_label, rel_label):
-                obj1_idx = tf.argmax(tf.gather(cur_img_obj_scores_0, obj1_label, axis=1))
-                obj1_bbox = tf.gather(cur_img_proposals, obj1_idx, axis=0)
-                obj1_bbox_tiled = tf.tile(tf.expand_dims(obj1_bbox, axis=0), [max_num_proposals, 1])
-                obj1_iou = box_utils.iou(tf.reshape(cur_img_proposals, [-1, 4]), obj1_bbox_tiled)
-                obj1_iou = tf.reshape(obj1_iou, [max_num_proposals])
-                obj1_relevant_boxes_idxs = \
-                    tf.boolean_mask(tf.range(max_num_proposals), tf.greater_equal(obj1_iou, iou_threshold))
-                obj1_relevant_boxes = tf.gather(cur_img_proposals, obj1_relevant_boxes_idxs, axis=0)
-                obj_1_obj_dists = tf.gather(cur_img_obj_scores_0, obj1_relevant_boxes_idxs, axis=0)
+                def get_boxes_and_dists(inp_obj_label):
+                    inp_obj_idx = tf.argmax(tf.gather(cur_img_obj_scores_0, inp_obj_label, axis=1))
+                    inp_obj_bbox = tf.gather(cur_img_proposals, inp_obj_idx, axis=0)
+                    inp_obj_bbox_tiled = tf.tile(tf.expand_dims(inp_obj_bbox, axis=0), [max_num_proposals, 1])
+                    inp_obj_iou = box_utils.iou(tf.reshape(cur_img_proposals, [-1, 4]), inp_obj_bbox_tiled)
+                    inp_obj_iou = tf.reshape(inp_obj_iou, [max_num_proposals])
+                    inp_obj_relevant_boxes_idxs = \
+                        tf.boolean_mask(tf.range(max_num_proposals), tf.greater_equal(inp_obj_iou, iou_threshold))
+                    inp_obj_relevant_boxes = tf.gather(cur_img_proposals, inp_obj_relevant_boxes_idxs, axis=0)
+                    inp_obj_obj_dists = tf.gather(cur_img_obj_scores_0, inp_obj_relevant_boxes_idxs, axis=0)
 
-                obj2_idx = tf.argmax(tf.gather(cur_img_obj_scores_0, obj2_label, axis=1))
-                obj2_bbox = tf.gather(cur_img_proposals, obj2_idx, axis=0)
-                obj2_bbox_tiled = tf.tile(tf.expand_dims(obj2_bbox, axis=0), [max_num_proposals, 1])
-                obj2_iou = box_utils.iou(tf.reshape(cur_img_proposals, [-1, 4]), obj2_bbox_tiled)
-                obj2_iou = tf.reshape(obj2_iou, [max_num_proposals])
-                obj2_relevant_boxes_idxs = \
-                    tf.boolean_mask(tf.range(max_num_proposals), tf.greater_equal(obj2_iou, iou_threshold))
-                obj2_relevant_boxes = tf.gather(cur_img_proposals, obj2_relevant_boxes_idxs, axis=0)
-                obj_2_obj_dists = tf.gather(cur_img_obj_scores_0, obj2_relevant_boxes_idxs, axis=0)
+                    return inp_obj_relevant_boxes, inp_obj_obj_dists
+
+                obj1_relevant_boxes, obj1_obj_dists = get_boxes_and_dists(obj1_label)
+                obj2_relevant_boxes, obj2_obj_dists = get_boxes_and_dists(obj2_label)
 
                 num_interleaved_boxes = tf.shape(obj1_relevant_boxes)[0] * tf.shape(obj2_relevant_boxes)[0]
                 interleaved_bboxes = tf.cond(tf.greater(num_interleaved_boxes, 0),
@@ -381,7 +375,7 @@ def calc_sg_oicr_loss(labels,
                                              lambda: tf.zeros([0, 8]))
 
                 interleaved_objs_dists = tf.cond(tf.greater(num_interleaved_boxes, 0),
-                                                 lambda: interleave_bboxes(obj_1_obj_dists, obj_2_obj_dists, 2 * 81),
+                                                 lambda: interleave_bboxes(obj1_obj_dists, obj2_obj_dists, 2 * 81),
                                                  lambda: tf.zeros([0, 2 * 81]))
 
                 rels_classifier_input = tf.concat([interleaved_bboxes, interleaved_objs_dists], axis=1)
