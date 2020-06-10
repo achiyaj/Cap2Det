@@ -110,7 +110,7 @@ def calc_oicr_loss(labels,
     return oicr_cross_entropy_loss
 
 
-def interleave_bboxes(bboxes_1, bboxes_2):
+def interleave_bboxes(bboxes_1, bboxes_2, final_shape=8):
     num_bboxes1 = tf.shape(bboxes_1)[0]
     num_bboxes2 = tf.shape(bboxes_2)[0]
 
@@ -127,7 +127,7 @@ def interleave_bboxes(bboxes_1, bboxes_2):
 
     interleaved_bboxes, _ = \
         tf.while_loop(cond, body, [tf.TensorArray(dtype=tf.float32, size=num_bboxes1), tf.constant(0)])
-    interleaved_bboxes = tf.reshape(interleaved_bboxes.stack(), [-1, 8])
+    interleaved_bboxes = tf.reshape(interleaved_bboxes.stack(), [-1, final_shape])
     return interleaved_bboxes
 
 
@@ -289,14 +289,25 @@ def calc_sg_oicr_loss(labels,
 
                 fixed_obj_bbox_tiled = tf.tile(tf.expand_dims(fixed_obj_bbox, axis=0), [max_num_proposals, 1])
 
+                # get object distributions of bounding boxes and feed to relations classifier
+                fixed_obj_objs_dist_tiled = tf.tile(tf.expand_dims(tf.gather(
+                    cur_img_obj_scores_0, fixed_obj_idx, axis=0),  axis=0), [max_num_proposals, 1])
+                proposals_objs_dist_tiled = cur_img_obj_scores_0
+
                 if is_fixed_subj:
                     # the variable box comes first
-                    obj_boxes_pairs = tf.concat([cur_img_proposals, fixed_obj_bbox_tiled], axis=1)
+                    obj_boxes_pairs = tf.concat(
+                        [cur_img_proposals, fixed_obj_bbox_tiled, proposals_objs_dist_tiled, fixed_obj_objs_dist_tiled],
+                        axis=1
+                    )
                 else:
                     # the fixed box comes first
-                    obj_boxes_pairs = tf.concat([fixed_obj_bbox_tiled, cur_img_proposals], axis=1)
+                    obj_boxes_pairs = tf.concat(
+                        [fixed_obj_bbox_tiled, cur_img_proposals, fixed_obj_objs_dist_tiled, proposals_objs_dist_tiled],
+                        axis=1
+                    )
 
-                obj_boxes_pairs = tf.ensure_shape(obj_boxes_pairs, [None, 8])
+                obj_boxes_pairs = tf.ensure_shape(obj_boxes_pairs, [None, 8 + 2 * 81])
 
                 with tf.variable_scope("rels_fc", reuse=tf.AUTO_REUSE):
                     rel_probs_0 = slim.fully_connected(
@@ -352,6 +363,7 @@ def calc_sg_oicr_loss(labels,
                 obj1_relevant_boxes_idxs = \
                     tf.boolean_mask(tf.range(max_num_proposals), tf.greater_equal(obj1_iou, iou_threshold))
                 obj1_relevant_boxes = tf.gather(cur_img_proposals, obj1_relevant_boxes_idxs, axis=0)
+                obj_1_obj_dists = tf.gather(cur_img_obj_scores_0, obj1_relevant_boxes_idxs, axis=0)
 
                 obj2_idx = tf.argmax(tf.gather(cur_img_obj_scores_0, obj2_label, axis=1))
                 obj2_bbox = tf.gather(cur_img_proposals, obj2_idx, axis=0)
@@ -361,15 +373,22 @@ def calc_sg_oicr_loss(labels,
                 obj2_relevant_boxes_idxs = \
                     tf.boolean_mask(tf.range(max_num_proposals), tf.greater_equal(obj2_iou, iou_threshold))
                 obj2_relevant_boxes = tf.gather(cur_img_proposals, obj2_relevant_boxes_idxs, axis=0)
+                obj_2_obj_dists = tf.gather(cur_img_obj_scores_0, obj2_relevant_boxes_idxs, axis=0)
 
                 num_interleaved_boxes = tf.shape(obj1_relevant_boxes)[0] * tf.shape(obj2_relevant_boxes)[0]
                 interleaved_bboxes = tf.cond(tf.greater(num_interleaved_boxes, 0),
                                              lambda: interleave_bboxes(obj1_relevant_boxes, obj2_relevant_boxes),
                                              lambda: tf.zeros([0, 8]))
 
+                interleaved_objs_dists = tf.cond(tf.greater(num_interleaved_boxes, 0),
+                                                 lambda: interleave_bboxes(obj_1_obj_dists, obj_2_obj_dists, 2 * 81),
+                                                 lambda: tf.zeros([0, 2 * 81]))
+
+                rels_classifier_input = tf.concat([interleaved_bboxes, interleaved_objs_dists], axis=1)
+
                 with tf.variable_scope("rels_fc", reuse=tf.AUTO_REUSE):
                     rel_probs = slim.fully_connected(
-                        interleaved_bboxes,
+                        rels_classifier_input,
                         num_outputs=1 + num_rels,
                         activation_fn=None,
                         scope=f'oicr/iter{num_oicr_iter}')
