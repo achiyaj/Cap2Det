@@ -13,7 +13,7 @@ def main(model_dir, config_filename, start_epoch, end_epoch, steps_interval, num
         for num_steps in range(start_epoch, end_epoch + 1, steps_interval):
             ckpt_filename = os.path.join('logs', model_dir, 'ckpts', f'model.ckpt-{num_steps}.meta')
             if os.path.isfile(ckpt_filename):
-                out_f.write(f'Starting eval for step {num_steps}!\n')
+                out_f.write(f'Starting to eval for step {num_steps}!\n')
                 args = ['python', 'train/predict.py', '--alsologtostderr', '--evaluator=coco', '--run_once',
                         f'--pipeline_proto=configs/{config_filename}.pbtxt',
                         f'--model_dir=logs/{model_dir}', f'--max_eval_examples={num_eval_examples}',
@@ -21,6 +21,7 @@ def main(model_dir, config_filename, start_epoch, end_epoch, steps_interval, num
                         '--vocabulary_file=data/coco_open_vocab.txt', f'--ckpt_num={num_steps}'
                         ]
                 subprocess.call(' '.join(args), stdout=out_f, stderr=out_f, shell=True)
+                out_f.write(f'Finished eval for step {num_steps}!\n')
             else:
                 out_f.write(f'No ckpt file was find for epoch {num_steps}\n')
 

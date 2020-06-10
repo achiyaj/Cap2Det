@@ -19,7 +19,7 @@ def get_train_step(ckpt_filename):
 
 
 def main(model_dir):
-    with open(os.path.join(model_dir, 'ckpts_saver_out.txt'), 'w', buffering=1) as log_file:
+    with open(os.path.join(model_dir, 'ckpts_saver_out.txt'), 'w') as log_file:
         try:
             os.makedirs(os.path.join(model_dir, 'ckpts'), exist_ok=True)
             time_from_last_save = 0
@@ -48,7 +48,9 @@ def main(model_dir):
                     if time_from_last_save > MAX_TRIES_TIME:
                         return
 
+                log_file.flush()
                 time.sleep(SLEEP_TIME)
+
         except Exception as e:
             log_file.write(f'{datetime.datetime.now()}: Exception! {e}\n')
             return
