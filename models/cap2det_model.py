@@ -310,9 +310,12 @@ class Model(ModelBase):
         if rels_file != '':
             CONF_THRESH = 0.05
 
-            detection_scores = tf.squeeze(predictions_aggregated['detection_scores_at_3'])
-            detection_boxes = tf.squeeze(predictions_aggregated['detection_boxes_at_3'])
+            detection_scores = tf.reduce_max(tf.squeeze(predictions_aggregated['oicr_proposal_scores_at_3']), axis=1)
+            detection_dists = tf.nn.softmax(tf.squeeze(predictions_aggregated['oicr_proposal_scores_at_3']), axis=1)
+            detection_boxes = tf.squeeze(predictions_aggregated['proposal_boxes'])
             detections_boxes_over_thresh = tf.boolean_mask(detection_boxes, tf.greater(detection_scores, CONF_THRESH),
+                                                           axis=0)
+            detections_dists_over_thresh = tf.boolean_mask(detection_dists, tf.greater(detection_scores, CONF_THRESH),
                                                            axis=0)
 
             num_rels = len(json.load(open(rels_file)))
@@ -321,16 +324,18 @@ class Model(ModelBase):
                 int_boxes_pair_idx = boxes_pair_idx.numpy().item()
                 int_num_dt_boxes = num_dt_boxes.numpy().item()
                 first_box = int(int_boxes_pair_idx / (int_num_dt_boxes - 1))
-                boxes_remainer = int_boxes_pair_idx % (int_num_dt_boxes - 1)
-                second_box = boxes_remainer if boxes_remainer < first_box else boxes_remainer + 1
+                boxes_remainder = int_boxes_pair_idx % (int_num_dt_boxes - 1)
+                second_box = boxes_remainder if boxes_remainder < first_box else boxes_remainder + 1
 
                 return float(first_box), float(second_box)
 
             def get_rel_preds():
-                interleaved_boxes = model_utils.bboxes_combinations(detections_boxes_over_thresh)
+                interleaved_boxes = model_utils.bboxes_combinations(detections_boxes_over_thresh, 8)
+                interleaved_dists = model_utils.bboxes_combinations(detections_dists_over_thresh, 2 * 81)
+                classifier_inp = tf.concat([interleaved_boxes, interleaved_dists], axis=1)
                 with tf.variable_scope("rels_fc", reuse=tf.AUTO_REUSE):
                     rel_scores = slim.fully_connected(
-                        interleaved_boxes,
+                        classifier_inp,
                         num_outputs=1 + num_rels,
                         activation_fn=None,
                         scope=f'oicr/iter3')

@@ -131,7 +131,7 @@ def interleave_bboxes(bboxes_1, bboxes_2, final_shape=8):
     return interleaved_bboxes
 
 
-def bboxes_combinations(bboxes):
+def bboxes_combinations(bboxes, final_shape):
     num_bboxes = tf.shape(bboxes)[0]
 
     def body(output_arr, bbox_idx):
@@ -148,7 +148,7 @@ def bboxes_combinations(bboxes):
 
     interleaved_bboxes, _ = \
         tf.while_loop(cond, body, [tf.TensorArray(dtype=tf.float32, size=num_bboxes), tf.constant(0)])
-    interleaved_bboxes = tf.reshape(interleaved_bboxes.stack(), [-1, 8])
+    interleaved_bboxes = tf.reshape(interleaved_bboxes.stack(), [-1, final_shape])
     return interleaved_bboxes
 
 
