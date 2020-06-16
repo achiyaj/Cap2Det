@@ -283,7 +283,8 @@ def calc_sg_oicr_loss(labels,
             # fix obj1 and maximize the probability product of the relation label and obj2
 
             def calc_obj_rels_loss_late_oicr_iters(fixed_obj_label, var_obj_label, rel_label, is_fixed_subj):
-                fixed_obj_idx = tf.argmax(tf.gather(cur_img_obj_scores_0, fixed_obj_label, axis=0))
+                fixed_obj_scores = tf.gather(cur_img_obj_scores_0, fixed_obj_label, axis=1)
+                fixed_obj_idx = tf.argmax(fixed_obj_scores)
                 fixed_obj_bbox = tf.gather(cur_img_proposals, fixed_obj_idx, axis=0)
                 fixed_obj_bbox_tiled = tf.tile(tf.expand_dims(fixed_obj_bbox, axis=0), [max_num_proposals, 1])
                 var_obj_all_boxes_scores = tf.gather(cur_img_obj_scores_0, var_obj_label, axis=1)
@@ -354,7 +355,8 @@ def calc_sg_oicr_loss(labels,
 
             def calc_obj_rels_loss_first_oicr_iter(obj1_label, obj2_label, rel_label):
                 def get_boxes_and_dists(inp_obj_label):
-                    inp_obj_idx = tf.argmax(tf.gather(cur_img_obj_scores_0, inp_obj_label, axis=1))
+                    inp_obj_scores = tf.gather(cur_img_obj_scores_0, inp_obj_label, axis=1)
+                    inp_obj_idx = tf.argmax(inp_obj_scores)
                     inp_obj_bbox = tf.gather(cur_img_proposals, inp_obj_idx, axis=0)
                     inp_obj_bbox_tiled = tf.tile(tf.expand_dims(inp_obj_bbox, axis=0), [max_num_proposals, 1])
                     inp_obj_iou = box_utils.iou(tf.reshape(cur_img_proposals, [-1, 4]), inp_obj_bbox_tiled)
