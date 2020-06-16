@@ -352,7 +352,7 @@ def calc_sg_oicr_loss(labels,
 
                 return objs_ce_loss, rels_ce_loss, tf.shape(relevant_boxes)[0]
 
-            def calc_obj_rels_loss_first_oicr_iters(obj1_label, obj2_label, rel_label):
+            def calc_obj_rels_loss_first_oicr_iter(obj1_label, obj2_label, rel_label):
                 def get_boxes_and_dists(inp_obj_label):
                     inp_obj_idx = tf.argmax(tf.gather(cur_img_obj_scores_0, inp_obj_label, axis=1))
                     inp_obj_bbox = tf.gather(cur_img_proposals, inp_obj_idx, axis=0)
@@ -396,31 +396,22 @@ def calc_sg_oicr_loss(labels,
                 return rels_ce_loss, tf.shape(interleaved_bboxes)[0]
 
             # obj1 is fixed and obj2 is varying
+            objs_ce_loss1, rels_ce_loss1, num_boxes1 = \
+                calc_obj_rels_loss_late_oicr_iters(obj1_label, obj2_label, cur_rel_label, False)
+            # obj2 is fixed and obj1 is varying
+            objs_ce_loss2, rels_ce_loss2, num_boxes2 = \
+                calc_obj_rels_loss_late_oicr_iters(obj2_label, obj1_label, cur_rel_label, True)
+
+            objs_loss += sg_obj_loss_weight * (objs_ce_loss1 + objs_ce_loss2)
+            rels_loss += sg_rel_loss_weight * (rels_ce_loss1 + rels_ce_loss2)
+            num_obj_boxes += num_boxes1 + num_boxes2
+            num_rel_boxes += num_boxes1 + num_boxes2
+
             if num_oicr_iter == 0:
                 rels_ce_loss0, num_boxes0 = \
-                    calc_obj_rels_loss_first_oicr_iters(obj1_label, obj2_label, cur_rel_label)
-                objs_ce_loss1, rels_ce_loss1, num_boxes1 = \
-                    calc_obj_rels_loss_late_oicr_iters(obj1_label, obj2_label, cur_rel_label, False)
-                objs_ce_loss2, rels_ce_loss2, num_boxes2 = \
-                    calc_obj_rels_loss_late_oicr_iters(obj2_label, obj1_label, cur_rel_label, True)
-
-                objs_loss += sg_obj_loss_weight * (objs_ce_loss1 + objs_ce_loss2)
-                num_obj_boxes += num_boxes1 + num_boxes2
-                rels_loss += sg_rel_loss_weight * (rels_ce_loss0 + rels_ce_loss1 + rels_ce_loss2)
-                num_rel_boxes += num_boxes0 + num_boxes1 + num_boxes2
-                rels_loss += sg_rel_loss_weight * (rels_ce_loss1 + rels_ce_loss2)
-                num_rel_boxes += num_boxes1 + num_boxes2
-
-            else:
-                objs_ce_loss1, rels_ce_loss1, num_boxes1 = \
-                    calc_obj_rels_loss_late_oicr_iters(obj1_label, obj2_label, cur_rel_label, False)
-                objs_ce_loss2, rels_ce_loss2, num_boxes2 = \
-                    calc_obj_rels_loss_late_oicr_iters(obj2_label, obj1_label, cur_rel_label, True)
-
-                objs_loss += sg_obj_loss_weight * (objs_ce_loss1 + objs_ce_loss2)
-                rels_loss += sg_rel_loss_weight * (rels_ce_loss1 + rels_ce_loss2)
-                num_obj_boxes += num_boxes1 + num_boxes2
-                num_rel_boxes += num_boxes1 + num_boxes2
+                    calc_obj_rels_loss_first_oicr_iter(obj1_label, obj2_label, cur_rel_label)
+                rels_loss += sg_rel_loss_weight * rels_ce_loss0
+                num_rel_boxes += num_boxes0
 
             return cur_label_idx + 1, objs_loss, rels_loss, num_obj_boxes, num_rel_boxes
 
