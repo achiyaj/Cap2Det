@@ -19,9 +19,10 @@ def get_train_step(ckpt_filename):
 
 
 def main(model_dir):
+    os.makedirs(model_dir, exist_ok=True)
+    os.makedirs(os.path.join(model_dir, 'ckpts'), exist_ok=True)
     with open(os.path.join(model_dir, 'ckpts_saver_out.txt'), 'w') as log_file:
         try:
-            os.makedirs(os.path.join(model_dir, 'ckpts'), exist_ok=True)
             time_from_last_save = 0
             while True:
                 ckpt_filenames = get_ckpt_filenames(model_dir)
