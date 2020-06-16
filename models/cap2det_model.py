@@ -310,8 +310,8 @@ class Model(ModelBase):
         if rels_file != '':
             CONF_THRESH = 0.05
 
-            detection_scores = tf.reduce_max(tf.squeeze(predictions_aggregated['oicr_proposal_scores_at_3']), axis=1)
             detection_dists = tf.nn.softmax(tf.squeeze(predictions_aggregated['oicr_proposal_scores_at_3']), axis=1)
+            detection_scores = tf.reduce_max(detection_dists[:, 1:], axis=1)
             detection_boxes = tf.squeeze(predictions_aggregated['proposal_boxes'])
             detections_boxes_over_thresh = tf.boolean_mask(detection_boxes, tf.greater(detection_scores, CONF_THRESH),
                                                            axis=0)
@@ -351,8 +351,11 @@ class Model(ModelBase):
                 get_rel_boxes = lambda: tf.py_function(func=get_num_boxes, inp=[most_prob_rel_idx, tf.shape(
                     detections_boxes_over_thresh)[0]], Tout=[tf.float32, tf.float32])
                 rel_box1, rel_box2 = get_rel_boxes()
+                obj_classes = tf.argmax(detections_dists_over_thresh[:, 1:], axis=1)
+                obj1_class = tf.cast(tf.gather(obj_classes, tf.cast(rel_box1, tf.int32)), tf.float32)
+                obj2_class = tf.cast(tf.gather(obj_classes, tf.cast(rel_box2, tf.int32)), tf.float32)
 
-                return tf.stack([rel_class, rel_prob, rel_box1, rel_box2], axis=0)
+                return tf.stack([rel_class, rel_prob, rel_box1, rel_box2, obj1_class, obj2_class], axis=0)
 
             rels_data = tf.cond(tf.greater(tf.shape(detections_boxes_over_thresh)[0], 1),
                                 true_fn=lambda: get_rel_preds(),
@@ -360,7 +363,8 @@ class Model(ModelBase):
 
             predictions_aggregated['rel_class'] = tf.cast(rels_data[0], tf.int32)
             predictions_aggregated['rel_prob'] = rels_data[1]
-            predictions_aggregated['rel_boxes'] = tf.cast(rels_data[2:], tf.int32)
+            predictions_aggregated['rel_boxes'] = tf.cast(rels_data[2:4], tf.int32)
+            predictions_aggregated['rel_obj_subj'] = tf.cast(rels_data[4:], tf.int32)
 
         return predictions_aggregated
 

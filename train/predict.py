@@ -186,8 +186,8 @@ def _visualize(examples, categories, filename, labels_dict=None, rels_dict=None)
             # if rels predcition is present, generate rels caption
             if rel_exists:
                 opposite_rels_dict = {v: k for k, v in rels_dict.items()}
-                rel_obj1 = categories[int(dt_labels[example['rel_boxes'][0]]) - 1]
-                rel_obj2 = categories[int(dt_labels[example['rel_boxes'][1]]) - 1]
+                rel_obj1 = categories[int(example['rel_obj_subj'][0])]
+                rel_obj2 = categories[int(example['rel_obj_subj'][1])]
                 rel_text = opposite_rels_dict[example['rel_class']]
                 rel_annot = f'Predicted relation: {rel_obj1} {rel_text} {rel_obj2}'
 
@@ -515,6 +515,7 @@ def _run_evaluation(pipeline_proto,
                     visl_example['rel_class'] = examples['rel_class']
                     visl_example['rel_prob'] = examples['rel_prob']
                     visl_example['rel_boxes'] = examples['rel_boxes']
+                    visl_example['rel_obj_subj'] = examples['rel_obj_subj']
                 for name in [
                     InputDataFields.num_captions, InputDataFields.caption_strings,
                     InputDataFields.caption_lengths,
