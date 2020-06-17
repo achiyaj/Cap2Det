@@ -223,6 +223,8 @@ def get_input_fn(options):
             tf.data.TFRecordDataset, cycle_length=options.interleave_cycle_length)
         if options.is_training:
             dataset = dataset.repeat().shuffle(options.shuffle_buffer_size)
+        else:
+            dataset = dataset.shuffle(5000, seed=12345)
         dataset = dataset.map(
             map_func=_parse_fn, num_parallel_calls=options.map_num_parallel_calls)
         if options.shard_indicator:
