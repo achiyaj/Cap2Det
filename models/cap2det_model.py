@@ -333,12 +333,7 @@ class Model(ModelBase):
                 interleaved_boxes = model_utils.bboxes_combinations(detections_boxes_over_thresh, 8)
                 interleaved_dists = model_utils.bboxes_combinations(detections_dists_over_thresh, 2 * 81)
                 classifier_inp = tf.concat([interleaved_boxes, interleaved_dists], axis=1)
-                with tf.variable_scope("rels_fc", reuse=tf.AUTO_REUSE):
-                    rel_scores = slim.fully_connected(
-                        classifier_inp,
-                        num_outputs=1 + num_rels,
-                        activation_fn=None,
-                        scope=f'oicr/iter3')
+                rel_scores = model_utils.reuse_mlp('rels_fc_oicr_iter_3', classifier_inp, 1, 50, 1 + num_rels)
 
                 all_rels_probs = tf.nn.softmax(rel_scores, axis=1)
                 rels_classes = tf.argmax(all_rels_probs, axis=1)

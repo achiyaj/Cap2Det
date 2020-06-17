@@ -152,6 +152,23 @@ def bboxes_combinations(bboxes, final_shape):
     return interleaved_bboxes
 
 
+def reuse_mlp(scope_name, inputs, num_hidden, hidden_dim, num_outputs):
+    with tf.variable_scope(scope_name, reuse=tf.AUTO_REUSE):
+        cur_activations = inputs
+        for layer_num in range(num_hidden):
+            cur_activations = slim.fully_connected(
+                cur_activations,
+                num_outputs=hidden_dim,
+                activation_fn=tf.nn.relu,
+                scope=f'hidden_{layer_num}')
+        cur_activations = slim.fully_connected(
+                cur_activations,
+                num_outputs=num_outputs,
+                activation_fn=None,
+                scope=f'output_layer')
+        return cur_activations
+
+
 def calc_sg_oicr_loss(labels,
                       num_proposals,
                       proposals,
@@ -308,18 +325,20 @@ def calc_sg_oicr_loss(labels,
 
                 obj_boxes_pairs = tf.ensure_shape(obj_boxes_pairs, [None, 8 + 2 * 81])
 
-                with tf.variable_scope("rels_fc", reuse=tf.AUTO_REUSE):
-                    rel_probs_0 = slim.fully_connected(
-                        obj_boxes_pairs,
-                        num_outputs=1 + num_rels,
-                        activation_fn=None,
-                        scope=f'oicr/iter{num_oicr_iter}')
-
-                    rel_probs_1 = slim.fully_connected(
-                        obj_boxes_pairs,
-                        num_outputs=1 + num_rels,
-                        activation_fn=None,
-                        scope=f'oicr/iter{num_oicr_iter + 1}')
+                # with tf.variable_scope("rels_fc", reuse=tf.AUTO_REUSE):
+                #     rel_probs_0 = slim.fully_connected(
+                #         obj_boxes_pairs,
+                #         num_outputs=1 + num_rels,
+                #         activation_fn=None,
+                #         scope=f'oicr/iter{num_oicr_iter}')
+                #
+                #     rel_probs_1 = slim.fully_connected(
+                #         obj_boxes_pairs,
+                #         num_outputs=1 + num_rels,
+                #         activation_fn=None,
+                #         scope=f'oicr/iter{num_oicr_iter + 1}')
+                rel_probs_0 = reuse_mlp(f"rels_fc_oicr_iter_{num_oicr_iter}", obj_boxes_pairs, 1, 50, 1 + num_rels)
+                rel_probs_1 = reuse_mlp(f"rels_fc_oicr_iter_{num_oicr_iter + 1}", obj_boxes_pairs, 1, 50, 1 + num_rels)
 
                 cur_rel_probs_0 = tf.gather(rel_probs_0, rel_label, axis=1)
 
@@ -382,12 +401,13 @@ def calc_sg_oicr_loss(labels,
 
                 rels_classifier_input = tf.concat([interleaved_bboxes, interleaved_objs_dists], axis=1)
 
-                with tf.variable_scope("rels_fc", reuse=tf.AUTO_REUSE):
-                    rel_probs = slim.fully_connected(
-                        rels_classifier_input,
-                        num_outputs=1 + num_rels,
-                        activation_fn=None,
-                        scope=f'oicr/iter{num_oicr_iter}')
+                # with tf.variable_scope("rels_fc", reuse=tf.AUTO_REUSE):
+                #     rel_probs = slim.fully_connected(
+                #         rels_classifier_input,
+                #         num_outputs=1 + num_rels,
+                #         activation_fn=None,
+                #         scope=f'oicr/iter{num_oicr_iter}')
+                rel_probs = reuse_mlp(f"rels_fc_oicr_iter_{num_oicr_iter}", rels_classifier_input, 1, 50, 1 + num_rels)
 
                 rel_labels = tf.fill([tf.shape(interleaved_bboxes)[0]], rel_label)
 
