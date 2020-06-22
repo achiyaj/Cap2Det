@@ -310,13 +310,42 @@ class Model(ModelBase):
         if rels_file != '':
             CONF_THRESH = 0.05
 
-            detection_dists = tf.nn.softmax(tf.squeeze(predictions_aggregated['oicr_proposal_scores_at_3']), axis=1)
-            detection_scores = tf.reduce_max(detection_dists[:, 1:], axis=1)
-            detection_boxes = tf.squeeze(predictions_aggregated['proposal_boxes'])
-            detections_boxes_over_thresh = tf.boolean_mask(detection_boxes, tf.greater(detection_scores, CONF_THRESH),
-                                                           axis=0)
-            detections_dists_over_thresh = tf.boolean_mask(detection_dists, tf.greater(detection_scores, CONF_THRESH),
-                                                           axis=0)
+            pre_boxes = tf.transpose(predictions_aggregated['proposal_boxes'], perm=[1, 0, 2])
+            pre_boxes_broadcasted = tf.broadcast_to(pre_boxes, [500, 300, 4])
+
+            post_boxes = predictions_aggregated['detection_boxes_at_3']
+            post_boxes_broadcasted = tf.broadcast_to(post_boxes, [500, 300, 4])
+
+            # vector with 300 len, maps post to pre boxes
+            boxes_mapping = tf.argmin(tf.reduce_sum(tf.abs(pre_boxes_broadcasted - post_boxes_broadcasted), axis=2),
+                                      axis=0)
+
+            post_nms_detection_dists = tf.gather(tf.squeeze(predictions_aggregated['oicr_proposal_scores_at_3']),
+                                                 boxes_mapping, axis=0)
+            detection_dists = tf.nn.softmax(post_nms_detection_dists, axis=1)
+
+            detection_scores =  tf.squeeze(predictions_aggregated['detection_scores_at_3'])
+
+
+            detection_boxes = tf.squeeze(post_boxes)
+
+            def get_unique_boxes_mask(detection_boxes_inp):
+                unique_boxes_mask = []
+                np_boxes = detection_boxes_inp.numpy()
+                for cur_box_idx in range(np_boxes.shape[0]):
+                    is_unique_box = True
+                    for prev_box_idx in range(cur_box_idx):
+                        if np.sum(np.abs(np_boxes[cur_box_idx, :] - np_boxes[prev_box_idx, :])) == 0:
+                            is_unique_box = False
+                    unique_boxes_mask.append(is_unique_box)
+
+                return np.array(unique_boxes_mask, dtype=np.int32)
+
+            unique_boxes_mask = tf.ensure_shape(tf.py_function(func=get_unique_boxes_mask, inp=[detection_boxes], Tout=tf.bool), (300,))
+            boxes_mask = tf.logical_and(unique_boxes_mask, tf.greater(detection_scores, CONF_THRESH))
+            detections_boxes_over_thresh = tf.boolean_mask(detection_boxes, boxes_mask)
+            detections_dists_over_thresh = tf.boolean_mask(detection_dists, boxes_mask)
+            detections_scores_over_thresh = tf.boolean_mask(detection_scores, boxes_mask)
 
             num_rels = len(json.load(open(rels_file)))
 
