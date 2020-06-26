@@ -152,6 +152,138 @@ class ExactMatchExtractor(LabelExtractor):
                 vocabulary_list=classes_to_match)
 
 
+class SGExactMatchExtractor(LabelExtractor):
+    """ExactMatch extractor.
+
+    Extracts labels from captions using ExactMatch.
+    Only processes the basic substutions using a synonyms dictionary.
+    """
+
+    def __init__(self, options):
+        """Initializes the label extractor."""
+        if options.extend_sg_file == '':  # i.e do not extend SG vocab
+            super(SGExactMatchExtractor, self).__init__(options)
+            with tf.gfile.GFile(options.label_file, "r") as fid:
+                self._classes = [line.strip('\n') for line in fid.readlines()]
+            self._num_classes = len(self._classes)
+            self._name2id = {class_label: i for i, class_label in enumerate(self._classes)}
+        else:
+            self._name2id = {}
+            self._classes = []
+
+            with tf.gfile.GFile(options.extend_sg_file, "r") as fid:
+                for class_id, line in enumerate(fid):
+                    class_name, synonyms = line.strip('\n').split('\t')
+                    self._name2id[class_name] = class_id
+                    self._classes.append(class_name)
+                    synonyms = [x for x in synonyms.split(',') if x]
+                    if synonyms:
+                        for synonym in synonyms:
+                            self._name2id[synonym] = class_id
+                    else:
+                        tf.logging.warning('Class %s has no synonym.', class_name)
+        self._num_classes = len(self._classes)
+
+        # build SGs dictionary
+
+        sgs_files = glob(options.sgs_file)
+        self.sgs_dict = {}
+        for file in sgs_files:
+            self.sgs_dict.update(json.load(open(file)))
+
+        self.att_categories = json.load(open(options.atts_file))
+        self.att2category = {att: cat_name for cat_name, cat_dict in self.att_categories.items() for att in cat_dict.keys()}
+        self.att_to_ids = {att: (cat_id, att_id)
+                           for cat_id, (cat_name, cat_dict) in enumerate(self.att_categories.items())
+                           for att_id, att in enumerate(cat_dict.keys())}
+
+        try:
+            self.sg_rels = json.load(open(options.rels_file))
+            self.use_rels = True
+        except:
+            self.use_rels = False
+
+
+    def extract_labels(self, examples):
+        """Extracts the pseudo labels.
+        Args:
+          examples: A dictionary involving image-level annotations.
+        Returns:
+          labels: A [batch, num_classes] tensor denoting the presence of classes.
+        """
+        classes_to_match = _replace_class_names(self._classes)
+
+        with tf.name_scope('exact_match_extractor'):
+            obj_labels = _match_labels(
+                class_texts=examples[InputDataFields.concat_caption_string],
+                vocabulary_list=classes_to_match)
+
+            batch, num_tokens = utils.get_tensor_shape(
+                examples[InputDataFields.concat_caption_string])
+            att_labels = {}
+
+            for category_name, category_atts in self.att_categories.items():
+                category_keys = list(category_atts.keys())
+                category_values = list(range(len(category_keys)))
+                table = tf.contrib.lookup.HashTable(
+                    initializer=tf.contrib.lookup.KeyValueTensorInitializer(category_keys, category_values),
+                    default_value=-1)  # Class ID for Out-of-Vocabulary words.
+
+                category_ids = table.lookup(examples[InputDataFields.concat_caption_string])
+                cur_labels = tf.one_hot(
+                    indices=category_ids, depth=len(category_keys), dtype=tf.float32)
+
+                att_labels[category_name] = tf.cond(
+                    num_tokens > 0,
+                    true_fn=lambda: tf.reduce_max(cur_labels, axis=1),
+                    false_fn=lambda: tf.zeros(shape=[batch, len(category_keys)]))
+
+            def get_sg(imgs_ids):
+                str_imgs_ids = [str(x.decode('utf-8')) for x in imgs_ids.numpy().tolist()]
+                label_imgs_ids = []
+                sg_obj_labels = []
+                sg_att_categories = []
+                sg_att_labels = []
+                sg_rel_labels = []
+                num_labels = 0
+                for img_num, img_id in enumerate(str_imgs_ids):
+                    sgs = [self.sgs_dict[x] for x in self.sgs_dict.keys() if x.startswith(f'{img_id}_')]
+                    for sg in sgs:
+                        for obj_data in sg['objects'].values():
+                            if not obj_data['label'] in self._name2id:
+                                continue
+                            relevant_atts = [x for x in obj_data['attributes'] if x in self.att2category.keys()]
+                            for cur_att in relevant_atts:
+                                label_imgs_ids.append(img_num)
+                                sg_obj_labels.append(self._name2id[obj_data['label']])
+
+                                cat_id, att_id = self.att_to_ids[cur_att]
+                                sg_att_categories.append(cat_id)
+                                sg_att_labels.append(att_id)
+                                num_labels += 1
+
+                        if self.use_rels:
+                            for obj_ids, rel_label in sg['relations'].items():
+                                obj_id1, obj_id2 = obj_ids[1:-1].split(', ')
+                                obj_label_str1 = sg['objects'][obj_id1]['label']
+                                obj_label_str2 = sg['objects'][obj_id2]['label']
+                                if not (obj_label_str1 in self._name2id and obj_label_str2 in self._name2id
+                                        and rel_label in self.sg_rels
+                                        and self._name2id[obj_label_str1] != self._name2id[obj_label_str2]):
+                                    continue
+                                sg_rel_labels.append([img_num, self._name2id[obj_label_str1],
+                                                      self._name2id[obj_label_str2], self.sg_rels[rel_label]])
+
+                if len(sg_rel_labels) == 0:
+                    rels_data = np.zeros((0, 4), dtype=np.int32)
+                else:
+                    rels_data = np.array(sg_rel_labels)
+                return label_imgs_ids, sg_obj_labels, sg_att_categories, sg_att_labels, num_labels, rels_data
+
+            sg_data = tf.py_function(func=get_sg, inp=[examples[InputDataFields.image_id]], Tout=[tf.int32] * 6)
+            return obj_labels, att_labels, sg_data
+
+
 class ExtendMatchExtractor(LabelExtractor):
     """ExtendMatch extractor.
 
@@ -728,5 +860,8 @@ def build_label_extractor(config):
 
     elif 'sg_extend_match_extractor' == label_extractor_oneof:
         return SGExtendMatchExtractor(config.sg_extend_match_extractor)
+
+    elif 'sg_exact_match_extractor' == label_extractor_oneof:
+        return SGExactMatchExtractor(config.sg_exact_match_extractor)
 
     raise ValueError('Invalid label extractor %s' % label_extractor_oneof)
