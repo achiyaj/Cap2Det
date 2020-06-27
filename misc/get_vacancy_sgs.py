@@ -19,7 +19,8 @@ EXTRACTION_TYPE = 'vacancy'
 def get_lines_from_file(input_file):
     with open(input_file) as f:
         lines = f.readlines()
-    return [x.split('\t')[-1].strip() for x in lines]
+    # return [x.split('\t')[-1].strip() for x in lines]
+    return [x.strip() for x in lines]
 
 
 def get_pretty_graph(parser, sent):
@@ -40,7 +41,13 @@ def get_pretty_graph(parser, sent):
 def get_graphs(input):
     start_idx, sgs_chunk = input
     parser = sng_parser.Parser('spacy', model='en')
-    graphs = {start_idx + i: get_pretty_graph(parser, sent) for i, sent in enumerate(sgs_chunk)}
+    # graphs = {start_idx + i: get_pretty_graph(parser, sent) for i, sent in enumerate(sgs_chunk)}
+    graphs = {}
+    for cur_line in sgs_chunk:
+        img_name, sent = cur_line.split('\t')
+        sg_id = img_name[:-6] + '_' + img_name[-1]
+        graph = get_pretty_graph(parser, sent)
+        graphs[sg_id] = graph
     return graphs
 
 
