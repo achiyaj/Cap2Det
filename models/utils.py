@@ -172,11 +172,11 @@ def reuse_mlp(scope_name, inputs, num_hidden, hidden_dim, num_outputs):
 def calc_obj_rels_loss_late_oicr_iters(fixed_obj_label, var_obj_label, rel_label, is_fixed_subj, img_obj_scores_0,
                                        img_obj_scores_1, img_proposals, num_proposals, num_oicr_iter, num_rels,
                                        num_obj_classes_plus_one, iou_threshold):
-    fixed_obj_scores = tf.gather(img_obj_scores_0, fixed_obj_label, axis=1)
+    fixed_obj_scores = tf.gather(img_obj_scores_0, fixed_obj_label + 1, axis=1)
     fixed_obj_idx = tf.argmax(fixed_obj_scores)
     fixed_obj_bbox = tf.gather(img_proposals, fixed_obj_idx, axis=0)
     fixed_obj_bbox_tiled = tf.tile(tf.expand_dims(fixed_obj_bbox, axis=0), [num_proposals, 1])
-    var_obj_all_boxes_scores = tf.gather(img_obj_scores_0, var_obj_label, axis=1)
+    var_obj_all_boxes_scores = tf.gather(img_obj_scores_0, var_obj_label + 1, axis=1)
 
     # get object distributions of bounding boxes and feed to relations classifier
     fixed_obj_objs_dist_tiled = tf.tile(tf.expand_dims(tf.gather(
@@ -233,7 +233,7 @@ def calc_obj_rels_loss_late_oicr_iters(fixed_obj_label, var_obj_label, rel_label
 def calc_obj_rels_loss_first_oicr_iter(obj1_label, obj2_label, rel_label, img_obj_scores_0,
                                        img_proposals, num_proposals, num_oicr_iter, num_rels, iou_threshold):
     def get_boxes_and_dists(inp_obj_label):
-        inp_obj_scores = tf.gather(img_obj_scores_0, inp_obj_label, axis=1)
+        inp_obj_scores = tf.gather(img_obj_scores_0, inp_obj_label + 1, axis=1)
         inp_obj_idx = tf.argmax(inp_obj_scores)
         inp_obj_bbox = tf.gather(img_proposals, inp_obj_idx, axis=0)
         inp_obj_bbox_tiled = tf.tile(tf.expand_dims(inp_obj_bbox, axis=0), [num_proposals, 1])
@@ -359,7 +359,6 @@ def calc_sg_oicr_loss(labels,
             iou = tf.reshape(iou, [max_num_proposals])
 
             # Filter out irrelevant predictions using image-level label.
-
             relevant_boxes = tf.boolean_mask(tf.range(max_num_proposals), tf.greater_equal(iou, iou_threshold))
             relevant_obj_scores_1 = tf.gather(cur_img_obj_scores_1, relevant_boxes, axis=0)
             relevant_att_scores_1 = tf.gather(att_category_scores_1, relevant_boxes, axis=0)
