@@ -169,6 +169,106 @@ def reuse_mlp(scope_name, inputs, num_hidden, hidden_dim, num_outputs):
         return cur_activations
 
 
+def calc_obj_rels_loss_late_oicr_iters(fixed_obj_label, var_obj_label, rel_label, is_fixed_subj, img_obj_scores_0,
+                                       img_obj_scores_1, img_proposals, num_proposals, num_oicr_iter, num_rels,
+                                       num_obj_classes_plus_one, iou_threshold):
+    fixed_obj_scores = tf.gather(img_obj_scores_0, fixed_obj_label, axis=1)
+    fixed_obj_idx = tf.argmax(fixed_obj_scores)
+    fixed_obj_bbox = tf.gather(img_proposals, fixed_obj_idx, axis=0)
+    fixed_obj_bbox_tiled = tf.tile(tf.expand_dims(fixed_obj_bbox, axis=0), [num_proposals, 1])
+    var_obj_all_boxes_scores = tf.gather(img_obj_scores_0, var_obj_label, axis=1)
+
+    # get object distributions of bounding boxes and feed to relations classifier
+    fixed_obj_objs_dist_tiled = tf.tile(tf.expand_dims(tf.gather(
+        img_obj_scores_0, fixed_obj_idx, axis=0), axis=0), [num_proposals, 1])
+
+    if is_fixed_subj:  # the variable box comes first
+        obj_boxes_pairs = tf.concat(
+            [img_proposals, fixed_obj_bbox_tiled, img_obj_scores_0, fixed_obj_objs_dist_tiled],
+            axis=1
+        )
+    else:  # the fixed box comes first
+        obj_boxes_pairs = tf.concat(
+            [fixed_obj_bbox_tiled, img_proposals, fixed_obj_objs_dist_tiled, img_obj_scores_0],
+            axis=1
+        )
+
+    obj_boxes_pairs = tf.ensure_shape(obj_boxes_pairs, [None, 8 + 2 * 81])
+
+    rel_probs_0 = reuse_mlp(f"rels_fc_oicr_iter_{num_oicr_iter}", obj_boxes_pairs, 1, 50, 1 + num_rels)
+    rel_probs_1 = reuse_mlp(f"rels_fc_oicr_iter_{num_oicr_iter + 1}", obj_boxes_pairs, 1, 50, 1 + num_rels)
+
+    cur_rel_probs_0 = tf.gather(rel_probs_0, rel_label, axis=1)
+
+    product_scores = tf.multiply(var_obj_all_boxes_scores, cur_rel_probs_0)
+    confident_proposal_idx = tf.cast(tf.argmax(product_scores), tf.int32)
+    confident_proposal = tf.gather(img_proposals, confident_proposal_idx, axis=0)
+    confident_proposal_tiled = tf.tile(tf.expand_dims(confident_proposal, axis=0), [num_proposals, 1])
+
+    iou = box_utils.iou(tf.reshape(img_proposals, [-1, 4]), confident_proposal_tiled)
+    iou = tf.reshape(iou, [num_proposals])
+
+    # Filter out irrelevant predictions using image-level label.
+    relevant_boxes = tf.boolean_mask(tf.range(num_proposals), tf.greater_equal(iou, iou_threshold))
+    relevant_obj_scores_1 = tf.gather(img_obj_scores_1, relevant_boxes, axis=0)
+    relevant_rel_scores_1 = tf.gather(rel_probs_1, relevant_boxes, axis=0)
+
+    # add 1 because the first entry contains the BG probability
+    obj_labels = tf.fill(tf.shape(relevant_boxes), fixed_obj_label + 1)
+    rel_labels = tf.fill(tf.shape(relevant_boxes), rel_label)
+
+    objs_ce_loss = tf.reduce_sum(tf.nn.softmax_cross_entropy_with_logits(
+        labels=tf.stop_gradient(tf.one_hot(obj_labels, depth=num_obj_classes_plus_one, axis=-1)),
+        logits=relevant_obj_scores_1,
+        dim=-1))
+
+    rels_ce_loss = tf.reduce_sum(tf.nn.softmax_cross_entropy_with_logits(
+        labels=tf.stop_gradient(tf.one_hot(rel_labels, depth=tf.shape(relevant_rel_scores_1)[1], axis=-1)),
+        logits=relevant_rel_scores_1,
+        dim=-1))
+
+    return objs_ce_loss, rels_ce_loss, tf.shape(relevant_boxes)[0]
+
+
+def calc_obj_rels_loss_first_oicr_iter(obj1_label, obj2_label, rel_label, img_obj_scores_0,
+                                       img_proposals, num_proposals, num_oicr_iter, num_rels, iou_threshold):
+    def get_boxes_and_dists(inp_obj_label):
+        inp_obj_scores = tf.gather(img_obj_scores_0, inp_obj_label, axis=1)
+        inp_obj_idx = tf.argmax(inp_obj_scores)
+        inp_obj_bbox = tf.gather(img_proposals, inp_obj_idx, axis=0)
+        inp_obj_bbox_tiled = tf.tile(tf.expand_dims(inp_obj_bbox, axis=0), [num_proposals, 1])
+        inp_obj_iou = box_utils.iou(tf.reshape(img_proposals, [-1, 4]), inp_obj_bbox_tiled)
+        inp_obj_iou = tf.reshape(inp_obj_iou, [num_proposals])
+        inp_obj_relevant_boxes_idxs = \
+            tf.boolean_mask(tf.range(num_proposals), tf.greater_equal(inp_obj_iou, iou_threshold))
+        inp_obj_relevant_boxes = tf.gather(img_proposals, inp_obj_relevant_boxes_idxs, axis=0)
+        inp_obj_obj_dists = tf.gather(img_obj_scores_0, inp_obj_relevant_boxes_idxs, axis=0)
+
+        return inp_obj_relevant_boxes, inp_obj_obj_dists
+
+    obj1_relevant_boxes, obj1_obj_dists = get_boxes_and_dists(obj1_label)
+    obj2_relevant_boxes, obj2_obj_dists = get_boxes_and_dists(obj2_label)
+
+    num_interleaved_boxes = tf.shape(obj1_relevant_boxes)[0] * tf.shape(obj2_relevant_boxes)[0]
+    interleaved_bboxes = tf.cond(tf.greater(num_interleaved_boxes, 0),
+                                 lambda: interleave_bboxes(obj1_relevant_boxes, obj2_relevant_boxes),
+                                 lambda: tf.zeros([0, 8]))
+
+    interleaved_objs_dists = tf.cond(tf.greater(num_interleaved_boxes, 0),
+                                     lambda: interleave_bboxes(obj1_obj_dists, obj2_obj_dists, 2 * 81),
+                                     lambda: tf.zeros([0, 2 * 81]))
+
+    rels_classifier_input = tf.concat([interleaved_bboxes, interleaved_objs_dists], axis=1)
+    rel_probs = reuse_mlp(f"rels_fc_oicr_iter_{num_oicr_iter}", rels_classifier_input, 1, 50, 1 + num_rels)
+    rel_labels = tf.fill([tf.shape(interleaved_bboxes)[0]], rel_label)
+
+    rels_ce_loss = tf.reduce_sum(tf.nn.softmax_cross_entropy_with_logits(
+        labels=tf.stop_gradient(tf.one_hot(rel_labels, depth=tf.shape(rel_probs)[1], axis=-1)),
+        logits=rel_probs, dim=-1))
+
+    return rels_ce_loss, tf.shape(interleaved_bboxes)[0]
+
+
 def calc_sg_oicr_loss(labels,
                       num_proposals,
                       proposals,
@@ -296,133 +396,21 @@ def calc_sg_oicr_loss(labels,
             cur_img_obj_scores_0 = tf.gather(scores_0, cur_img_id, axis=0)
             cur_img_obj_scores_1 = tf.gather(scores_1, cur_img_id, axis=0)
             cur_img_proposals = tf.gather(proposals, cur_img_id, axis=0)
-
-            # fix obj1 and maximize the probability product of the relation label and obj2
-
-            def calc_obj_rels_loss_late_oicr_iters(fixed_obj_label, var_obj_label, rel_label, is_fixed_subj):
-                fixed_obj_scores = tf.gather(cur_img_obj_scores_0, fixed_obj_label, axis=1)
-                fixed_obj_idx = tf.argmax(fixed_obj_scores)
-                fixed_obj_bbox = tf.gather(cur_img_proposals, fixed_obj_idx, axis=0)
-                fixed_obj_bbox_tiled = tf.tile(tf.expand_dims(fixed_obj_bbox, axis=0), [max_num_proposals, 1])
-                var_obj_all_boxes_scores = tf.gather(cur_img_obj_scores_0, var_obj_label, axis=1)
-
-                # get object distributions of bounding boxes and feed to relations classifier
-                fixed_obj_objs_dist_tiled = tf.tile(tf.expand_dims(tf.gather(
-                    cur_img_obj_scores_0, fixed_obj_idx, axis=0),  axis=0), [max_num_proposals, 1])
-
-                if is_fixed_subj:
-                    # the variable box comes first
-                    obj_boxes_pairs = tf.concat(
-                        [cur_img_proposals, fixed_obj_bbox_tiled, cur_img_obj_scores_0, fixed_obj_objs_dist_tiled],
-                        axis=1
-                    )
-                else:
-                    # the fixed box comes first
-                    obj_boxes_pairs = tf.concat(
-                        [fixed_obj_bbox_tiled, cur_img_proposals, fixed_obj_objs_dist_tiled, cur_img_obj_scores_0],
-                        axis=1
-                    )
-
-                obj_boxes_pairs = tf.ensure_shape(obj_boxes_pairs, [None, 8 + 2 * 81])
-
-                # with tf.variable_scope("rels_fc", reuse=tf.AUTO_REUSE):
-                #     rel_probs_0 = slim.fully_connected(
-                #         obj_boxes_pairs,
-                #         num_outputs=1 + num_rels,
-                #         activation_fn=None,
-                #         scope=f'oicr/iter{num_oicr_iter}')
-                #
-                #     rel_probs_1 = slim.fully_connected(
-                #         obj_boxes_pairs,
-                #         num_outputs=1 + num_rels,
-                #         activation_fn=None,
-                #         scope=f'oicr/iter{num_oicr_iter + 1}')
-                rel_probs_0 = reuse_mlp(f"rels_fc_oicr_iter_{num_oicr_iter}", obj_boxes_pairs, 1, 50, 1 + num_rels)
-                rel_probs_1 = reuse_mlp(f"rels_fc_oicr_iter_{num_oicr_iter + 1}", obj_boxes_pairs, 1, 50, 1 + num_rels)
-
-                cur_rel_probs_0 = tf.gather(rel_probs_0, rel_label, axis=1)
-
-                product_scores = tf.multiply(var_obj_all_boxes_scores, cur_rel_probs_0)
-                confident_proposal_idx = tf.cast(tf.argmax(product_scores), tf.int32)
-                confident_proposal = tf.gather(cur_img_proposals, confident_proposal_idx, axis=0)
-                confident_proposal_tiled = tf.tile(tf.expand_dims(confident_proposal, axis=0), [max_num_proposals, 1])
-
-                iou = box_utils.iou(tf.reshape(cur_img_proposals, [-1, 4]), confident_proposal_tiled)
-                iou = tf.reshape(iou, [max_num_proposals])
-
-                # Filter out irrelevant predictions using image-level label.
-
-                relevant_boxes = tf.boolean_mask(tf.range(max_num_proposals), tf.greater_equal(iou, iou_threshold))
-                relevant_obj_scores_1 = tf.gather(cur_img_obj_scores_1, relevant_boxes, axis=0)
-                relevant_rel_scores_1 = tf.gather(rel_probs_1, relevant_boxes, axis=0)
-
-                # add 1 because the first entry contains the BG probability
-                obj_labels = tf.fill(tf.shape(relevant_boxes), fixed_obj_label + 1)
-                rel_labels = tf.fill(tf.shape(relevant_boxes), cur_rel_label)
-
-                objs_ce_loss = tf.reduce_sum(tf.nn.softmax_cross_entropy_with_logits(
-                    labels=tf.stop_gradient(tf.one_hot(obj_labels, depth=num_classes_plus_one, axis=-1)),
-                    logits=relevant_obj_scores_1,
-                    dim=-1))
-
-                rels_ce_loss = tf.reduce_sum(tf.nn.softmax_cross_entropy_with_logits(
-                    labels=tf.stop_gradient(tf.one_hot(rel_labels, depth=tf.shape(relevant_rel_scores_1)[1], axis=-1)),
-                    logits=relevant_rel_scores_1,
-                    dim=-1))
-
-                return objs_ce_loss, rels_ce_loss, tf.shape(relevant_boxes)[0]
-
-            def calc_obj_rels_loss_first_oicr_iter(obj1_label, obj2_label, rel_label):
-                def get_boxes_and_dists(inp_obj_label):
-                    inp_obj_scores = tf.gather(cur_img_obj_scores_0, inp_obj_label, axis=1)
-                    inp_obj_idx = tf.argmax(inp_obj_scores)
-                    inp_obj_bbox = tf.gather(cur_img_proposals, inp_obj_idx, axis=0)
-                    inp_obj_bbox_tiled = tf.tile(tf.expand_dims(inp_obj_bbox, axis=0), [max_num_proposals, 1])
-                    inp_obj_iou = box_utils.iou(tf.reshape(cur_img_proposals, [-1, 4]), inp_obj_bbox_tiled)
-                    inp_obj_iou = tf.reshape(inp_obj_iou, [max_num_proposals])
-                    inp_obj_relevant_boxes_idxs = \
-                        tf.boolean_mask(tf.range(max_num_proposals), tf.greater_equal(inp_obj_iou, iou_threshold))
-                    inp_obj_relevant_boxes = tf.gather(cur_img_proposals, inp_obj_relevant_boxes_idxs, axis=0)
-                    inp_obj_obj_dists = tf.gather(cur_img_obj_scores_0, inp_obj_relevant_boxes_idxs, axis=0)
-
-                    return inp_obj_relevant_boxes, inp_obj_obj_dists
-
-                obj1_relevant_boxes, obj1_obj_dists = get_boxes_and_dists(obj1_label)
-                obj2_relevant_boxes, obj2_obj_dists = get_boxes_and_dists(obj2_label)
-
-                num_interleaved_boxes = tf.shape(obj1_relevant_boxes)[0] * tf.shape(obj2_relevant_boxes)[0]
-                interleaved_bboxes = tf.cond(tf.greater(num_interleaved_boxes, 0),
-                                             lambda: interleave_bboxes(obj1_relevant_boxes, obj2_relevant_boxes),
-                                             lambda: tf.zeros([0, 8]))
-
-                interleaved_objs_dists = tf.cond(tf.greater(num_interleaved_boxes, 0),
-                                                 lambda: interleave_bboxes(obj1_obj_dists, obj2_obj_dists, 2 * 81),
-                                                 lambda: tf.zeros([0, 2 * 81]))
-
-                rels_classifier_input = tf.concat([interleaved_bboxes, interleaved_objs_dists], axis=1)
-
-                # with tf.variable_scope("rels_fc", reuse=tf.AUTO_REUSE):
-                #     rel_probs = slim.fully_connected(
-                #         rels_classifier_input,
-                #         num_outputs=1 + num_rels,
-                #         activation_fn=None,
-                #         scope=f'oicr/iter{num_oicr_iter}')
-                rel_probs = reuse_mlp(f"rels_fc_oicr_iter_{num_oicr_iter}", rels_classifier_input, 1, 50, 1 + num_rels)
-
-                rel_labels = tf.fill([tf.shape(interleaved_bboxes)[0]], rel_label)
-
-                rels_ce_loss = tf.reduce_sum(tf.nn.softmax_cross_entropy_with_logits(
-                    labels=tf.stop_gradient(tf.one_hot(rel_labels, depth=tf.shape(rel_probs)[1], axis=-1)),
-                    logits=rel_probs, dim=-1))
-
-                return rels_ce_loss, tf.shape(interleaved_bboxes)[0]
+            num_obj_classes_plus_one = tf.shape(cur_img_obj_scores_0)[1]
 
             # obj1 is fixed and obj2 is varying
             objs_ce_loss1, rels_ce_loss1, num_boxes1 = \
-                calc_obj_rels_loss_late_oicr_iters(obj1_label, obj2_label, cur_rel_label, False)
+                calc_obj_rels_loss_late_oicr_iters(
+                    obj1_label, obj2_label, cur_rel_label, False, cur_img_obj_scores_0, cur_img_obj_scores_1,
+                    cur_img_proposals, max_num_proposals, num_oicr_iter, num_rels, num_obj_classes_plus_one,
+                    iou_threshold)
+
             # obj2 is fixed and obj1 is varying
             objs_ce_loss2, rels_ce_loss2, num_boxes2 = \
-                calc_obj_rels_loss_late_oicr_iters(obj2_label, obj1_label, cur_rel_label, True)
+                calc_obj_rels_loss_late_oicr_iters(
+                    obj2_label, obj1_label, cur_rel_label, True, cur_img_obj_scores_0, cur_img_obj_scores_1,
+                    cur_img_proposals, max_num_proposals, num_oicr_iter, num_rels, num_obj_classes_plus_one,
+                    iou_threshold)
 
             objs_loss += sg_obj_loss_weight * (objs_ce_loss1 + objs_ce_loss2)
             rels_loss += sg_rel_loss_weight * (rels_ce_loss1 + rels_ce_loss2)
@@ -430,8 +418,10 @@ def calc_sg_oicr_loss(labels,
             num_rel_boxes += num_boxes1 + num_boxes2
 
             if num_oicr_iter == 0:
-                rels_ce_loss0, num_boxes0 = \
-                    calc_obj_rels_loss_first_oicr_iter(obj1_label, obj2_label, cur_rel_label)
+                rels_ce_loss0, num_boxes0 = calc_obj_rels_loss_first_oicr_iter(
+                    obj1_label, obj2_label, cur_rel_label, cur_img_obj_scores_0, cur_img_proposals, max_num_proposals,
+                    num_oicr_iter, num_rels, iou_threshold)
+
                 rels_loss += sg_rel_loss_weight * rels_ce_loss0
                 num_rel_boxes += num_boxes0
 
