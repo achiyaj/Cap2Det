@@ -31,7 +31,7 @@ def main(model_dir, config_filename, start_epoch, end_epoch, steps_interval, num
                 if 'raw-data-voc' in input_pattern:
                     args += ['--eval_coco_on_voc', '--label_file=data/voc_label.txt']
                 else:
-                    args += ['--eval_coco_on_voc', '--label_file=data/coco_label.txt']
+                    args += ['--label_file=data/coco_label.txt']
 
                 command = ' '.join(args)
                 out_f.write(f'Starting to eval for step {num_steps}!\n')
