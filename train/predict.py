@@ -623,7 +623,6 @@ def _run_evaluation(pipeline_proto,
                         fid.write(line2.replace(',', '&') + '\n')
                         fid.write('\n')
 
-    import pdb; pdb.set_trace()
     if save_report_to_file and not FLAGS.evaluator == 'pascal':
         os.makedirs(FLAGS.results_dir, exist_ok=True)
         cur_step = checkpoint_path.split('/')[-1].split('-')[-1]
