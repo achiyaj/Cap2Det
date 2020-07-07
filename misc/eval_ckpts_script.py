@@ -23,7 +23,7 @@ def main(model_dir, config_filename, start_epoch, end_epoch, steps_interval, num
                 args = ['python', 'train/predict.py', '--alsologtostderr', f'--evaluator={evaluator_type}',
                         '--run_once', f'--pipeline_proto=configs/{config_filename}.pbtxt',
                         f'--model_dir=logs/{model_dir}', f'--max_eval_examples={num_eval_examples}',
-                        f'--eval_log_dir=logs/{model_dir}/eval_det',
+                        f'--eval_log_dir=logs/{model_dir}/eval_det', f'--results_dir=logs/{model_dir}/val_results',
                         '--vocabulary_file=data/coco_open_vocab.txt', f'--ckpt_num={num_steps}'
                         ]
                 if input_pattern != '':

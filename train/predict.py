@@ -585,8 +585,10 @@ def _run_evaluation(pipeline_proto,
             category_labels_dict = {i: key for i, key in enumerate(category_labels_dict.keys())}
             _visualize(visl_examples, class_labels, FLAGS.visl_file_path, category_labels_dict, rels_dict=rels_dict)
 
+    all_metrics = {}
     for oicr_iter, evaluator in enumerate(evaluators):
         metrics = evaluator.evaluate()
+        all_metrics[oicr_iter] = metrics
         evaluator.clear()
         for k, v in metrics.items():
             summary.value.add(tag='{}_iter{}'.format(k, oicr_iter), simple_value=v)
@@ -620,6 +622,13 @@ def _run_evaluation(pipeline_proto,
                         fid.write(line1.replace(',', '&') + '\n')
                         fid.write(line2.replace(',', '&') + '\n')
                         fid.write('\n')
+
+    import pdb; pdb.set_trace()
+    if save_report_to_file and not FLAGS.evaluator == 'pascal':
+        os.makedirs(FLAGS.results_dir, exist_ok=True)
+        cur_step = checkpoint_path.split('/')[-1].split('-')[-1]
+        with open(os.path.join(FLAGS.results_dir, f'{cur_step}.json'), 'w') as out_f:
+            json.dump(all_metrics, out_f, indent=4)
 
     if 'PascalBoxes_Precision/mAP@0.5IOU' in metrics:
         return summary, metrics['PascalBoxes_Precision/mAP@0.5IOU']
@@ -690,7 +699,7 @@ def main(_):
 
                     summary, metric = _run_evaluation(pipeline_proto, checkpoint_path,
                                                       evaluators, category_to_id,
-                                                      categories)
+                                                      categories, FLAGS.results_dir != 'results')
 
                     step_best, metric_best = save_model_if_it_is_better(
                         global_step, metric, checkpoint_path, FLAGS.saved_ckpts_dir)
