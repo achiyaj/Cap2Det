@@ -24,7 +24,7 @@ def main(model_dir, config_filename, start_epoch, end_epoch, steps_interval, num
                         '--run_once', f'--pipeline_proto=configs/{config_filename}.pbtxt',
                         f'--model_dir=logs/{model_dir}', f'--max_eval_examples={num_eval_examples}',
                         f'--eval_log_dir=logs/{model_dir}/eval_det',
-                        f'--results_dir=logs/{model_dir}/val_results_{num_eval_examples}_examples',
+                        f'--results_dir=logs/{model_dir}/val_results_{num_eval_examples}_examples_{evaluator_type}',
                         '--vocabulary_file=data/coco_open_vocab.txt', f'--ckpt_num={num_steps}'
                         ]
                 if input_pattern != '':
@@ -41,7 +41,7 @@ def main(model_dir, config_filename, start_epoch, end_epoch, steps_interval, num
                 subprocess.call(command, stdout=out_f, stderr=out_f, shell=True)
                 out_f.write(f'Finished eval for step {num_steps}!\n')
             else:
-                out_f.write(f'No ckpt file was find for epoch {num_steps}\n')
+                out_f.write(f'Ckpt file not found: {ckpt_filename}\n')
 
             out_f.flush()
 
