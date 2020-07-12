@@ -594,36 +594,7 @@ def _run_evaluation(pipeline_proto,
             summary.value.add(tag='{}_iter{}'.format(k, oicr_iter), simple_value=v)
         tf.logging.info('\n%s', json.dumps(metrics, indent=2))
 
-        # Write the result file.
-        if save_report_to_file:
-            if FLAGS.evaluator == 'pascal':
-                corloc = [('/'.join(k.split('/')[1:]), v)
-                          for k, v in metrics.items()
-                          if 'CorLoc' in k]
-                mAP = [('/'.join(k.split('/')[1:]), v)
-                       for k, v in metrics.items()
-                       if 'AP' in k]
-
-                filename = os.path.join(FLAGS.results_dir,
-                                        FLAGS.pipeline_proto.split('/')[-1])
-                filename = filename.replace('pbtxt',
-                                            'csv') + '.iter_{}'.format(oicr_iter)
-                with open(filename, 'w') as fid:
-                    fid.write('{}\n'.format(eval_count))
-                    fid.write('\n')
-                    for lst in [mAP, corloc]:
-                        line1 = ','.join([k for k, _ in lst]).replace(
-                            '@0.5IOU', '').replace('AP/', '').replace('CorLoc/', '')
-                        line2 = ' , '.join(['%.1lf' % (v * 100) for _, v in lst])
-
-                        fid.write(line1 + '\n')
-                        fid.write(line2 + '\n')
-                        fid.write('\n')
-                        fid.write(line1.replace(',', '&') + '\n')
-                        fid.write(line2.replace(',', '&') + '\n')
-                        fid.write('\n')
-
-    if save_report_to_file and not FLAGS.evaluator == 'pascal':
+    if save_report_to_file:
         os.makedirs(FLAGS.results_dir, exist_ok=True)
         cur_step = checkpoint_path.split('/')[-1].split('-')[-1]
         with open(os.path.join(FLAGS.results_dir, f'{cur_step}.json'), 'w') as out_f:
