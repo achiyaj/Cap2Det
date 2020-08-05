@@ -35,6 +35,7 @@ import tensorflow as tf
 from google.protobuf import text_format
 from scipy.special import softmax
 import socket
+import datetime
 
 from tensorflow.python.platform import tf_logging as logging
 
@@ -696,13 +697,19 @@ def main(_):
                 checkpoint_path = os.path.join(FLAGS.model_dir, 'ckpts', f'model.ckpt-{FLAGS.ckpt_num}')
         tf.logging.info('Start to evaluate checkpoint %s.', checkpoint_path)
 
-        summary, metric = _run_evaluation(
-            pipeline_proto,
-            checkpoint_path,
-            evaluators,
-            category_to_id,
-            categories,
-            save_report_to_file=True)
+        try:
+            summary, metric = _run_evaluation(
+                pipeline_proto,
+                checkpoint_path,
+                evaluators,
+                category_to_id,
+                categories,
+                save_report_to_file=True)
+        except Exception as e:
+            with open('/specific/netapp5_2/gamir/achiya/vqa/Cap2Det_1st_attempt/pred_fails.log', 'a') as out_f:
+                out_f.write(f'{datetime.datetime.now()}: Failed predicting for model {FLAGS.model_dir} with ckpt {checkpoint_path}\n')
+                out_f.write(f'Exception text: {e}')
+                out_f.write('\n\n #################################################### \n\n')
 
     tf.logging.info('Done')
 
