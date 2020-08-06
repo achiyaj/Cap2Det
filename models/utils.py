@@ -452,6 +452,9 @@ def calc_sg_oicr_loss(labels,
                             lambda: rels_loss / tf.cast(num_rel_boxes, tf.float32)
                             )
 
+                # based on the value of this loss in the beginning of the training
+                mean_sg_rels_oicr_cross_entropy_loss_rels = mean_sg_rels_oicr_cross_entropy_loss_rels * 100
+
                 return mean_sg_atts_oicr_cross_entropy_loss + mean_sg_rels_oicr_cross_entropy_loss_objs + \
                        mean_sg_rels_oicr_cross_entropy_loss_rels
 
