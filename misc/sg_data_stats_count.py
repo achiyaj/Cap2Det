@@ -3,10 +3,14 @@ from tqdm import tqdm
 from collections import Counter
 
 # COCO Captions
-sgs_file = 'data/sg_extraction/vacancy_train.json'
-output_file = 'data/sg_extraction/coco_{}_stats.json'
-obj_att_pairs_output_file = 'data/sg_extraction/coco_obj_att_pairs_stats.json'
-num_occurrences_file = 'data/sg_extraction/coco_extend_match_occurences.json'
+# sgs_file = 'data/sg_extraction/vacancy_train.json'
+# output_file = 'data/sg_extraction/coco_{}_stats.json'
+# obj_att_pairs_output_file = 'data/sg_extraction/coco_obj_att_pairs_stats.json'
+# num_occurrences_file = 'data/sg_extraction/coco_extend_match_occurences.json'
+sgs_file = 'data/sg_extraction/wang_train_9_fixed_rels.json'
+output_file = 'data/sg_extraction/wang_9_{}_stats_extend_match.json'
+obj_att_pairs_output_file = 'data/sg_extraction/coco_obj_att_pairs_stats_wang_9.json'
+num_occurrences_file = 'data/sg_extraction/coco_extend_match_occurences_wang_9.json'
 
 # Conceptual Captions
 # sgs_file = '/specific/netapp5_2/gamir/datasets/ConceptualCaptions/scene_graphs/vacancy/train_data.json'
@@ -21,6 +25,9 @@ att_categories_file = 'data/sg_extraction/att_categories.json'
 objects_file = 'data/coco_label_synonyms.txt'
 relations_file = 'data/sg_extraction/relations_dict.json'
 
+COUNT_EXTEND_MATCH = True
+COUNT_SUBSTRING_OBJECTS = True
+
 
 def main():
     att_categories = json.load(open(att_categories_file))
@@ -32,16 +39,22 @@ def main():
 
     relevant_objs = []
     all_obj_labels = []
-    synonym_to_obj = {}
+
     with open(objects_file, "r") as fid:
         lines = fid.readlines()
-        for line in lines:
-            cur_synonyms = line[line.find('\t'):].strip().split(',')
-            relevant_objs += cur_synonyms
-            obj_label = line[:line.find('\t')]
-            all_obj_labels.append(obj_label)
-            for obj_synonym in cur_synonyms:
-                synonym_to_obj[obj_synonym] = obj_label
+        if COUNT_EXTEND_MATCH:
+            synonym_to_obj = {}
+            for line in lines:
+                cur_synonyms = line[line.find('\t'):].strip().split(',')
+                relevant_objs += cur_synonyms
+                obj_label = line[:line.find('\t')]
+                all_obj_labels.append(obj_label)
+                for obj_synonym in cur_synonyms:
+                    synonym_to_obj[obj_synonym] = obj_label
+        else:
+            relevant_objs = [x.split('\t')[0] for x in lines]
+            synonym_to_obj = {k: k for k in relevant_objs}
+            all_obj_labels = relevant_objs
 
     obj_att_pairs_stats = {obj_label: [] for obj_label in all_obj_labels}
     extend_match_counts = {obj_label: 0 for obj_label in all_obj_labels}
@@ -51,7 +64,9 @@ def main():
         cur_atts = []
         for obj_data in sg['objects'].values():
             obj_label_words = obj_data['label'].split(' ')
-            if not any([x in relevant_objs for x in obj_label_words]):
+            if COUNT_SUBSTRING_OBJECTS and not any([x in relevant_objs for x in obj_label_words]):
+                continue
+            if not COUNT_SUBSTRING_OBJECTS and obj_data['label'] not in obj_label_words:
                 continue
             cur_atts += obj_data['attributes']
 
@@ -82,7 +97,7 @@ def main():
                     obj_att_pairs_stats[synonym_to_obj[obj_label]].append(att_label)
 
     # extend_match occurences count
-    print('Calculating num exatnd_match occurrences!')
+    print('Calculating num att occurrences!')
     merged_sg_sents_dict = {}
     for sg_id, sg in sgs_dict.items():
         cur_img_id = sg_id[:sg_id.find('_')]
