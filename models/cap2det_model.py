@@ -559,7 +559,8 @@ class Model(ModelBase):
                         sg_obj_loss_weight=options.sg_obj_loss_weight,
                         sg_att_loss_weight=options.sg_att_loss_weight,
                         sg_rel_loss_weight=options.sg_rel_loss_weight if self.use_rels else 0,
-                        num_rels=len(self.sg_rels) if self.use_rels else -1
+                        num_rels=len(self.sg_rels) if self.use_rels else -1,
+                        sg_loss_dist_coef=self.sg_loss_dist_coef
                     )
 
                     atts_proposal_scores_0_dict = {key: tf.nn.softmax(atts_proposal_scores_1_dict[key], axis=-1) for key in
