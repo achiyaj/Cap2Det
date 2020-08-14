@@ -62,6 +62,11 @@ class Model(ModelBase):
         else:
             self.use_rels = False
 
+        if hasattr(options, 'sg_loss_dist_coef'):
+            self.sg_loss_dist_coef = options.sg_loss_dist_coef
+        else:
+            self.sg_loss_dist_coef = -1
+
     def _build_midn_network(self, num_proposals, proposal_features, num_classes):
         """Builds the Multiple Instance Detection Network.
 
