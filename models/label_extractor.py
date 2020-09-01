@@ -192,11 +192,17 @@ class SGExactMatchExtractor(LabelExtractor):
             self.sgs_dict.update(json.load(open(file)))
 
         self.att_categories = json.load(open(options.atts_file))
-        self.att2category = {att: cat_name for cat_name, cat_dict in self.att_categories.items() for att in cat_dict.keys()}
+
+        if hasattr(options, 'att_categories_to_drop') and options.att_categories_to_drop != '':
+            categories_to_drop = [int(x) for x in options.att_categories_to_drop.split(',')]
+            self.att_categories = {k: self.att_categories[k] for i, k in enumerate(self.att_categories.keys())
+                                   if i not in categories_to_drop}
+
+        self.att2category = {att: cat_name for cat_name, cat_dict in self.att_categories.items() for att in
+                             cat_dict.keys()}
         self.att_to_ids = {att: (cat_id, att_id)
                            for cat_id, (cat_name, cat_dict) in enumerate(self.att_categories.items())
                            for att_id, att in enumerate(cat_dict.keys())}
-
         try:
             self.sg_rels = json.load(open(options.rels_file))
             self.use_rels = True
