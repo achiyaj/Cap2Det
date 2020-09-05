@@ -192,11 +192,17 @@ class SGExactMatchExtractor(LabelExtractor):
             self.sgs_dict.update(json.load(open(file)))
 
         self.att_categories = json.load(open(options.atts_file))
-        self.att2category = {att: cat_name for cat_name, cat_dict in self.att_categories.items() for att in cat_dict.keys()}
+
+        if hasattr(options, 'att_categories_to_drop') and options.att_categories_to_drop != '':
+            categories_to_drop = [int(x) for x in options.att_categories_to_drop.split(',')]
+            self.att_categories = {k: self.att_categories[k] for i, k in enumerate(self.att_categories.keys())
+                                   if i not in categories_to_drop}
+
+        self.att2category = {att: cat_name for cat_name, cat_dict in self.att_categories.items() for att in
+                             cat_dict.keys()}
         self.att_to_ids = {att: (cat_id, att_id)
                            for cat_id, (cat_name, cat_dict) in enumerate(self.att_categories.items())
                            for att_id, att in enumerate(cat_dict.keys())}
-
         try:
             self.sg_rels = json.load(open(options.rels_file))
             self.use_rels = True
@@ -484,31 +490,28 @@ class TextClassifierMatchExtractor(LabelExtractor):
         with open(options.open_vocabulary_word_embedding_file, 'rb') as fid:
             self._open_vocabulary_word_embedding = np.load(fid)
 
-        try:
-            # build SGs dictionary
-            sgs_files = glob(options.sgs_file)
-            self.sgs_dict = {}
-            for file in sgs_files:
-                self.sgs_dict.update(json.load(open(file)))
+        if hasattr(options, 'sgs_file') and options.sgs_file != '':
+            self.extract_sg_data = True
+            if options.extend_sg_file == '':  # i.e do not extend SG vocab
+                with tf.gfile.GFile(options.label_file, "r") as fid:
+                    self._classes = [line.strip('\n') for line in fid.readlines()]
+                self._num_classes = len(self._classes)
+                self._name2id = {class_label: i for i, class_label in enumerate(self._classes)}
+            else:
+                self._name2id = {}
+                self._classes = []
 
-            self.att_categories = json.load(open(options.atts_file))
-            self.att2category = {att: cat_name for cat_name, cat_dict in self.att_categories.items() for att in
-                                 cat_dict.keys()}
-            self.att_to_ids = {att: (cat_id, att_id)
-                               for cat_id, (cat_name, cat_dict) in enumerate(self.att_categories.items())
-                               for att_id, att in enumerate(cat_dict.keys())}
-
-            self._name2id = {}
-            with tf.gfile.GFile(options.label_synonyms_file, "r") as fid:
-                for class_id, line in enumerate(fid):
-                    class_name, synonyms = line.strip('\n').split('\t')
-                    self._name2id[class_name] = class_id
-                    synonyms = [x for x in synonyms.split(',') if x]
-                    if synonyms:
-                        for synonym in synonyms:
-                            self._name2id[synonym] = class_id
-                    else:
-                        tf.logging.warning('Class %s has no synonym.', class_name)
+                with tf.gfile.GFile(options.extend_sg_file, "r") as fid:
+                    for class_id, line in enumerate(fid):
+                        class_name, synonyms = line.strip('\n').split('\t')
+                        self._name2id[class_name] = class_id
+                        self._classes.append(class_name)
+                        synonyms = [x for x in synonyms.split(',') if x]
+                        if synonyms:
+                            for synonym in synonyms:
+                                self._name2id[synonym] = class_id
+                        else:
+                            tf.logging.warning('Class %s has no synonym.', class_name)
             self._num_classes = len(self._classes)
 
             # build SGs dictionary
@@ -517,8 +520,24 @@ class TextClassifierMatchExtractor(LabelExtractor):
             for file in sgs_files:
                 self.sgs_dict.update(json.load(open(file)))
 
-            self.extract_sg_data = True
-        except Exception as e:
+            self.att_categories = json.load(open(options.atts_file))
+
+            if hasattr(options, 'att_categories_to_drop') and options.att_categories_to_drop != '':
+                categories_to_drop = [int(x) for x in options.att_categories_to_drop.split(',')]
+                self.att_categories = {k: self.att_categories[k] for i, k in enumerate(self.att_categories.keys())
+                                       if i not in categories_to_drop}
+
+            self.att2category = {att: cat_name for cat_name, cat_dict in self.att_categories.items() for att in
+                                 cat_dict.keys()}
+            self.att_to_ids = {att: (cat_id, att_id)
+                               for cat_id, (cat_name, cat_dict) in enumerate(self.att_categories.items())
+                               for att_id, att in enumerate(cat_dict.keys())}
+            try:
+                self.sg_rels = json.load(open(options.rels_file))
+                self.use_rels = True
+            except:
+                self.use_rels = False
+        else:
             self.extract_sg_data = False
 
     def _predict(self,
